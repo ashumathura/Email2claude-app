@@ -13,17 +13,38 @@ final class CoreTests: XCTestCase {
     }
 
     func testExactAndDomainRoutes() {
-        let config = Config(
-            routes: [Route(address: "sales@acme.com", chatURL: "A"), Route(address: "@acme.com", chatURL: "B")],
-            defaultChatURL: "D")
-        XCTAssertEqual(Router.chatURL(for: email(to: ["Sales@Acme.com"]), config: config), "A")
-        XCTAssertEqual(Router.chatURL(for: email(to: ["dev@acme.com"]), config: config), "B")
-        XCTAssertEqual(Router.chatURL(for: email(to: ["z@other.com"]), config: config), "D")
-        XCTAssertEqual(Router.chatURL(for: email(to: ["z@other.com"], cc: ["dev@acme.com"]), config: config), "B")
+        let config = Config(routes: [
+            Route(address: "sales@acme.com", chatTitle: "A"),
+            Route(address: "@acme.com", chatTitle: "B"),
+        ])
+        XCTAssertEqual(Router.route(for: email(to: ["Sales@Acme.com"]), config: config)?.chatTitle, "A")
+        XCTAssertEqual(Router.route(for: email(to: ["dev@acme.com"]), config: config)?.chatTitle, "B")
+        XCTAssertNil(Router.route(for: email(to: ["z@other.com"]), config: config))
     }
 
-    func testNoRouteNoDefault() {
-        XCTAssertNil(Router.chatURL(for: email(to: ["z@o.com"]), config: Config()))
+    func testOnlyToIsMatchedNotCc() {
+        let config = Config(routes: [Route(address: "dev@acme.com", chatTitle: "B")])
+        XCTAssertNil(Router.route(for: email(to: ["z@other.com"], cc: ["dev@acme.com"]), config: config))
+    }
+
+    func testUnknownAddress() {
+        let config = Config(routes: [Route(address: "known@x.com", chatTitle: "K")])
+        XCTAssertEqual(Router.unknownAddress(for: email(to: ["New <New@X.com>", "other@x.com"]), config: config), "new@x.com")
+        XCTAssertNil(Router.unknownAddress(for: email(to: ["known@x.com"]), config: config))
+    }
+
+    func testTargetPrefersLinkOverTitle() {
+        XCTAssertEqual(Route(address: "a", chatTitle: "T", chatURL: "https://claude.ai/chat/1").target,
+                       .link(URL(string: "claude://claude.ai/chat/1")!))
+        XCTAssertEqual(Route(address: "a", chatTitle: "T").target, .sidebar(title: "T"))
+        XCTAssertEqual(Route(address: "a", chatURL: "garbage").target, .newChat)
+    }
+
+    func testUpsertReplacesSameAddress() {
+        var config = Config()
+        config.upsert(Route(address: " A@B.com ", chatTitle: "one"))
+        config.upsert(Route(address: "a@b.com", chatTitle: "two"))
+        XCTAssertEqual(config.routes, [Route(address: "a@b.com", chatTitle: "two")])
     }
 
     func testChatLink() {
@@ -41,7 +62,7 @@ final class CoreTests: XCTestCase {
     func testConfigRoundTripAndPartialJSON() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("e2c-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: url) }
-        var config = Config(); config.routes = [Route(address: "a@b.com", chatURL: "X")]
+        var config = Config(); config.routes = [Route(address: "a@b.com", chatTitle: "X")]
         try config.save(to: url)
         XCTAssertEqual(Config.load(from: url), config)
         let partial = try JSONDecoder().decode(Config.self, from: Data(#"{"autoSend":false}"#.utf8))

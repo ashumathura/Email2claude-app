@@ -5,14 +5,14 @@ Menu-bar app for Apple Silicon Macs. Select an email in Mail, press **⌥⌘C**,
 
 ## Setup
 1. Install the DMG, open the app (it lives in the menu bar, no Dock icon).
-2. Grant **Accessibility** (System Settings → Privacy & Security) so it can paste into Claude.
+2. Grant **Accessibility** (System Settings → Privacy & Security) so it can read Claude's chat list and paste.
 3. First hotkey press asks for **Automation** access to Mail. Allow it.
-4. In Claude, open the chat you want for an address, copy its link (`https://claude.ai/chat/…`),
-   then menu bar icon → **Add Route…**. Unrouted emails go to the default chat, or a new chat.
+4. Menu bar icon → **Routes…** to map To addresses (or `@domain.com`) to Claude chats. Pick a chat from
+   the list read from Claude's sidebar, or paste a chat link (more reliable; it wins over the list).
+5. If you press ⌥⌘C on an email whose To address has no route, the app asks which chat to use and remembers it.
 
-Config lives in `~/Library/Application Support/Email2Claude/config.json`
-(routes, default chat, instruction text, `autoSend`, `openDelay`).
-Rules match recipients (To, then Cc) by exact address or `@domain.com`.
+Only the To addresses are matched. Config lives in `~/Library/Application Support/Email2Claude/config.json`
+(routes, instruction text, `autoSend`, `openDelay`).
 
 ## Build
 - `swift test` — routing/formatting tests (macOS)
@@ -23,5 +23,6 @@ Rules match recipients (To, then Cc) by exact address or `@domain.com`.
 
 ## Unverified assumptions (check on a Mac first)
 - Claude desktop bundle id `com.anthropic.claudefordesktop` and `claude://claude.ai/chat/<id>` deep links.
+- Claude's sidebar can be read via Accessibility (`ClaudeSidebar.swift` heuristics, likely needs tuning); chats are opened by pressing the row with the saved title, so titles must be unique and visible.
 - Claude's input box is focused after the chat opens, and ⌘V of a file attaches it.
 - Mail allows `save attachment` into the temp folder.

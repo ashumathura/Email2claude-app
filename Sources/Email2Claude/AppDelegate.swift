@@ -2,9 +2,11 @@ import AppKit
 import Carbon.HIToolbox
 import Email2ClaudeCore
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var hotKey: HotKey?
+    private var routesWindow: RoutesWindowController?
     private var busy = false
 
     private let configURL = FileManager.default
@@ -18,7 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildMenu()
 
         hotKey = HotKey(keyCode: kVK_ANSI_C, modifiers: optionKey | cmdKey) { [weak self] in
-            self?.sendSelectedEmail()
+            Task { @MainActor in self?.sendSelectedEmail() }
         }
         if hotKey == nil {
             alert("Could not register ⌥⌘C", "Another app may already own this shortcut.")
@@ -31,27 +33,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildMenu() {
         let menu = NSMenu()
-        menu.addItem(withTitle: "Send selected email to Claude (⌥⌘C)", action: #selector(menuSend), keyEquivalent: "")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Add Route…", action: #selector(addRoute), keyEquivalent: "")
-        menu.addItem(withTitle: "Set Default Chat…", action: #selector(setDefaultChat), keyEquivalent: "")
-        menu.addItem(withTitle: "Open config.json", action: #selector(openConfig), keyEquivalent: "")
+        let items: [(String, Selector, String)] = [
+            ("Send selected email to Claude (⌥⌘C)", #selector(menuSend), ""),
+            ("Routes…", #selector(showRoutes), ","),
+            ("Open config.json", #selector(openConfig), ""),
+        ]
+        for (title, action, key) in items {
+            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: key)
+            item.target = self
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.items.forEach { $0.target = $0.action == #selector(NSApplication.terminate(_:)) ? NSApp : self }
         statusItem.menu = menu
     }
 
     @objc private func menuSend() { sendSelectedEmail() }
 
+    @objc private func showRoutes() {
+        if routesWindow == nil {
+            routesWindow = RoutesWindowController(
+                load: { [unowned self] in Config.load(from: configURL) },
+                save: { [unowned self] in save($0) })
+        }
+        routesWindow?.show()
+    }
+
+    @objc private func openConfig() { NSWorkspace.shared.open(configURL) }
+
     private func sendSelectedEmail() {
         guard !busy else { return }
         busy = true
-        Task { @MainActor in
+        Task {
             defer { busy = false }
             do {
                 let email = try MailReader.readSelectedEmail()
-                try await ClaudeBridge.deliver(email, config: Config.load(from: configURL))
+                var config = Config.load(from: configURL)
+                guard let target = resolveTarget(for: email, config: &config) else { return }
+                try await ClaudeBridge.deliver(email, to: target, config: config)
             } catch {
                 NSSound.beep()
                 alert("Email2Claude", error.localizedDescription)
@@ -59,51 +77,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func addRoute() {
-        let address = NSTextField(frame: NSRect(x: 0, y: 30, width: 320, height: 24))
-        address.placeholderString = "Recipient address, or @domain.com"
-        let link = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        link.placeholderString = "Claude chat link (https://claude.ai/chat/…)"
-        let box = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 56))
-        box.addSubview(address)
-        box.addSubview(link)
-
-        let panel = NSAlert()
-        panel.messageText = "Add route"
-        panel.informativeText = "Emails to this address are pasted into that chat."
-        panel.accessoryView = box
-        panel.addButton(withTitle: "Save")
-        panel.addButton(withTitle: "Cancel")
-        NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .alertFirstButtonReturn else { return }
-
-        guard ChatLink.appURL(from: link.stringValue) != nil, !address.stringValue.isEmpty else {
-            return alert("Invalid route", "Enter an address and a claude.ai/chat/… link.")
+    /// Known To address → its chat. Unknown → ask, and remember the answer. nil means the user cancelled.
+    private func resolveTarget(for email: Email, config: inout Config) -> ChatTarget? {
+        if let route = Router.route(for: email, config: config) { return route.target }
+        guard let address = Router.unknownAddress(for: email, config: config) else { return .newChat }
+        switch ChatChooser.ask(address: address, offerOnce: true) {
+        case .save(let route):
+            config.upsert(route)
+            save(config)
+            return route.target
+        case .newChatOnce:
+            return .newChat
+        case .cancel:
+            return nil
         }
-        var config = Config.load(from: configURL)
-        config.routes.removeAll { $0.address.lowercased() == address.stringValue.lowercased() }
-        config.routes.append(Route(address: address.stringValue, chatURL: link.stringValue))
-        save(config)
     }
-
-    @objc private func setDefaultChat() {
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        field.placeholderString = "Claude chat link, empty = always start a new chat"
-        let panel = NSAlert()
-        panel.messageText = "Default chat"
-        panel.informativeText = "Used when no route matches the email's recipients."
-        panel.accessoryView = field
-        panel.addButton(withTitle: "Save")
-        panel.addButton(withTitle: "Cancel")
-        NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .alertFirstButtonReturn else { return }
-
-        var config = Config.load(from: configURL)
-        config.defaultChatURL = field.stringValue.isEmpty ? nil : field.stringValue
-        save(config)
-    }
-
-    @objc private func openConfig() { NSWorkspace.shared.open(configURL) }
 
     private func save(_ config: Config) {
         do { try config.save(to: configURL) } catch { alert("Could not save config", error.localizedDescription) }

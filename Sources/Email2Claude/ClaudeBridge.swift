@@ -4,10 +4,13 @@ import Email2ClaudeCore
 enum ClaudeError: LocalizedError {
     case notInstalled
     case noAccessibility
+    case chatNotFound(String)
 
     var errorDescription: String? {
         switch self {
         case .notInstalled: return "The Claude desktop app was not found."
+        case .chatNotFound(let title):
+            return "Couldn't find the chat “\(title)” in Claude's sidebar. Scroll it into view, or route this address by chat link instead."
         case .noAccessibility:
             return "Accessibility permission is required to paste into Claude. Enable Email2Claude in System Settings → Privacy & Security → Accessibility."
         }
@@ -18,7 +21,7 @@ enum ClaudeError: LocalizedError {
 /// Claude has no scripting API, so this is UI automation and depends on its input box having focus.
 @MainActor
 enum ClaudeBridge {
-    private static let bundleID = "com.anthropic.claudefordesktop"
+    private static let bundleID = ClaudeSidebar.bundleID
 
     private enum Key {
         static let v: CGKeyCode = 9
@@ -31,7 +34,7 @@ enum ClaudeBridge {
         return AXIsProcessTrustedWithOptions(options)
     }
 
-    static func deliver(_ email: Email, config: Config) async throws {
+    static func deliver(_ email: Email, to target: ChatTarget, config: Config) async throws {
         guard accessibilityGranted(prompt: true) else { throw ClaudeError.noAccessibility }
         guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
         else { throw ClaudeError.notInstalled }
@@ -40,7 +43,7 @@ enum ClaudeBridge {
         defer { saved.restore() }
 
         await waitForModifiersReleased()
-        try await openChat(for: email, config: config, appURL: appURL)
+        try await openChat(target, appURL: appURL, config: config)
         try await Task.sleep(for: .seconds(config.openDelay))
 
         // Text first, then each attachment as a file paste so Claude attaches it.
@@ -56,12 +59,17 @@ enum ClaudeBridge {
         try await Task.sleep(for: .milliseconds(500))  // let the last paste land before restoring the clipboard
     }
 
-    private static func openChat(for email: Email, config: Config, appURL: URL) async throws {
+    private static func openChat(_ target: ChatTarget, appURL: URL, config: Config) async throws {
         let activation = NSWorkspace.OpenConfiguration()
         activation.activates = true
-        if let link = Router.chatURL(for: email, config: config), let url = ChatLink.appURL(from: link) {
+        switch target {
+        case .link(let url):
             _ = try await NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: activation)
-        } else {
+        case .sidebar(let title):
+            _ = try await NSWorkspace.shared.openApplication(at: appURL, configuration: activation)
+            try await Task.sleep(for: .milliseconds(800))
+            guard ClaudeSidebar.open(title: title) else { throw ClaudeError.chatNotFound(title) }
+        case .newChat:
             _ = try await NSWorkspace.shared.openApplication(at: appURL, configuration: activation)
             try await Task.sleep(for: .milliseconds(500))
             press(Key.n, flags: .maskCommand)  // new chat

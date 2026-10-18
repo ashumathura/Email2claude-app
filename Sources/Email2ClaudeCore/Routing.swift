@@ -16,15 +16,21 @@ public enum Router {
         return rule == address
     }
 
-    /// First matching route for the To recipients, then Cc, then the default chat.
-    public static func chatURL(for email: Email, config: Config) -> String? {
-        for raw in email.to + email.cc {
+    /// The route matching one of the To recipients, if any.
+    public static func route(for email: Email, config: Config) -> Route? {
+        for raw in email.to {
             let address = normalize(raw)
             if let route = config.routes.first(where: { matches(rule: $0.address, address: address) }) {
-                return route.chatURL
+                return route
             }
         }
-        return config.defaultChatURL
+        return nil
+    }
+
+    /// The first To address, when no route covers any To recipient. This is what the app asks about.
+    public static func unknownAddress(for email: Email, config: Config) -> String? {
+        guard route(for: email, config: config) == nil else { return nil }
+        return email.to.first.map(normalize)
     }
 }
 
