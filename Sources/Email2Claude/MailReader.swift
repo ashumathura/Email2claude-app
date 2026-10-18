@@ -44,6 +44,8 @@ enum MailReader {
             to: list(4), cc: list(5), body: text(6), attachmentPaths: list(7))
     }
 
+    /// Fetches recipients and attachment lists in single Apple Events instead of looping, and skips
+    /// small inline images (signature logos, tracking pixels), which cost a save and a paste each.
     private static func script(saveDir: String) -> String {
         let dir = saveDir.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         return """
@@ -51,22 +53,22 @@ enum MailReader {
             set sel to selection
             if (count of sel) is 0 then return {}
             set m to item 1 of sel
-            set toList to {}
-            repeat with r in (to recipients of m)
-                set end of toList to (address of r)
-            end repeat
-            set ccList to {}
-            repeat with r in (cc recipients of m)
-                set end of ccList to (address of r)
-            end repeat
+            set toList to address of every to recipient of m
+            set ccList to address of every cc recipient of m
             set savedPaths to {}
             set n to 0
-            repeat with a in (mail attachments of m)
+            repeat with a in (every mail attachment of m)
                 try
-                    set n to n + 1
-                    set p to "\(dir)/" & n & "-" & (name of a)
-                    save a in (POSIX file p)
-                    set end of savedPaths to p
+                    set tinyImage to false
+                    try
+                        if (MIME type of a) starts with "image/" and (file size of a) < 15000 then set tinyImage to true
+                    end try
+                    if not tinyImage then
+                        set n to n + 1
+                        set p to "\(dir)/" & n & "-" & (name of a)
+                        save a in (POSIX file p)
+                        set end of savedPaths to p
+                    end if
                 end try
             end repeat
             return {(sender of m), (subject of m), ((date received of m) as string), toList, ccList, (content of m), savedPaths}

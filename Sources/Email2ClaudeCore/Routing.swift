@@ -10,17 +10,38 @@ public enum Router {
         return s.lowercased()
     }
 
-    static func matches(rule: String, address: String) -> Bool {
-        let rule = rule.trimmingCharacters(in: .whitespaces).lowercased()
-        if rule.hasPrefix("@") { return address.hasSuffix(rule) }
-        return rule == address
+    /// Lowercases a rule and drops a leading "@" so "@Acme.com" and "acme.com" are the same rule.
+    public static func normalizeRule(_ raw: String) -> String {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if s.hasPrefix("@") { s.removeFirst() }
+        return s
     }
 
-    /// The route matching one of the To recipients, if any.
+    public static func domain(of address: String) -> String? {
+        guard let at = address.lastIndex(of: "@") else { return nil }
+        let domain = String(address[address.index(after: at)...])
+        return domain.isEmpty ? nil : domain
+    }
+
+    static func matches(rule: String, address: String) -> Bool {
+        let rule = normalizeRule(rule)
+        guard !rule.isEmpty else { return false }
+        if rule.contains("@") { return rule == address }
+        guard let domain = domain(of: address) else { return false }
+        return domain == rule || domain.hasSuffix("." + rule)
+    }
+
+    /// The route for this email. Looks only at the To recipients, in order; a rule for a full
+    /// address beats a domain rule, so one person at a shared domain (gmail.com) can be split out.
     public static func route(for email: Email, config: Config) -> Route? {
-        for raw in email.to {
-            let address = normalize(raw)
-            if let route = config.routes.first(where: { matches(rule: $0.address, address: address) }) {
+        let addresses = email.to.map(normalize)
+        for address in addresses {
+            if let route = config.routes.first(where: { $0.isAddressRule && matches(rule: $0.domain, address: address) }) {
+                return route
+            }
+        }
+        for address in addresses {
+            if let route = config.routes.first(where: { matches(rule: $0.domain, address: address) }) {
                 return route
             }
         }
@@ -35,6 +56,9 @@ public enum Router {
 }
 
 public enum ChatLink {
+    /// Opens a fresh incognito chat. Unverified: depends on the desktop app honouring ?incognito.
+    public static let incognitoURL = URL(string: "claude://claude.ai/new?incognito")!
+
     /// Converts https://claude.ai/chat/<id> into the desktop app's claude:// form.
     /// claude:// links pass through unchanged. Returns nil for anything else.
     public static func appURL(from string: String) -> URL? {

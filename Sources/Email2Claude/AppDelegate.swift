@@ -5,74 +5,98 @@ import Email2ClaudeCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    private var hotKey: HotKey?
-    private var routesWindow: RoutesWindowController?
-    private var busy = false
+    private var settingsWindow: SettingsWindowController?
+    private var store: ConfigStore!
+    private var busy = false {
+        didSet { statusItem?.button?.image = icon(busy ? "hourglass" : "envelope.arrow.triangle.branch") }
+    }
 
-    private let configURL = FileManager.default
-        .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("Email2Claude/config.json")
+    private static let keyCodes: [Action: Int] = [
+        .reply: kVK_ANSI_R, .summary: kVK_ANSI_S, .research: kVK_ANSI_D, .pasteOnly: kVK_ANSI_C,
+    ]
+    private static let symbols: [Action: String] = [
+        .reply: "arrowshape.turn.up.left", .summary: "checklist",
+        .research: "magnifyingglass", .pasteOnly: "doc.on.clipboard",
+    ]
 
     // main.swift creates the delegate outside the main actor; every stored property has a default.
     nonisolated override init() { super.init() }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        store = ConfigStore()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(
-            systemSymbolName: "envelope.arrow.triangle.branch", accessibilityDescription: "Email2Claude")
+        statusItem.button?.image = icon("envelope.arrow.triangle.branch")
         buildMenu()
-
-        hotKey = HotKey(keyCode: kVK_ANSI_C, modifiers: optionKey | cmdKey) { [weak self] in
-            Task { @MainActor in self?.sendSelectedEmail() }
-        }
-        if hotKey == nil {
-            alert("Could not register ⌥⌘C", "Another app may already own this shortcut.")
-        }
-        if !FileManager.default.fileExists(atPath: configURL.path) {
-            try? Config().save(to: configURL)
-        }
+        registerHotKeys()
         _ = ClaudeBridge.accessibilityGranted(prompt: true)
+    }
+
+    private func icon(_ symbol: String) -> NSImage? {
+        NSImage(systemSymbolName: symbol, accessibilityDescription: "Email2Claude")
+    }
+
+    private func registerHotKeys() {
+        var failed: [String] = []
+        for action in Action.allCases {
+            let registered = HotKeyCenter.shared.register(
+                keyCode: Self.keyCodes[action] ?? 0, modifiers: optionKey | cmdKey
+            ) { [weak self] in
+                Task { @MainActor in self?.send(action) }
+            }
+            if !registered { failed.append(action.shortcutLabel) }
+        }
+        if !failed.isEmpty {
+            alert("Some shortcuts are unavailable", "\(failed.joined(separator: ", ")) is already used by another app.")
+        }
     }
 
     private func buildMenu() {
         let menu = NSMenu()
-        let items: [(String, Selector, String)] = [
-            ("Send selected email to Claude (⌥⌘C)", #selector(menuSend), ""),
-            ("Routes…", #selector(showRoutes), ","),
-            ("Open config.json", #selector(openConfig), ""),
-        ]
-        for (title, action, key) in items {
-            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: key)
+
+        let sendMenu = NSMenu()
+        for action in Action.allCases {
+            let item = NSMenuItem(title: action.title, action: #selector(menuSend(_:)), keyEquivalent: action.keyEquivalent)
+            item.keyEquivalentModifierMask = [.option, .command]
+            item.representedObject = action.rawValue
+            item.image = icon(Self.symbols[action] ?? "envelope")
             item.target = self
+            sendMenu.addItem(item)
         }
+        let sendItem = NSMenuItem(title: "Send to Claude", action: nil, keyEquivalent: "")
+        sendItem.image = icon("paperplane")
+        sendItem.submenu = sendMenu
+        menu.addItem(sendItem)
+
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let settings = menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
+        settings.target = self
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Quit Email2Claude", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
     }
 
-    @objc private func menuSend() { sendSelectedEmail() }
-
-    @objc private func showRoutes() {
-        if routesWindow == nil {
-            routesWindow = RoutesWindowController(
-                load: { [unowned self] in Config.load(from: configURL) },
-                save: { [unowned self] in save($0) })
-        }
-        routesWindow?.show()
+    @objc private func menuSend(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let action = Action(rawValue: raw) else { return }
+        send(action)
     }
 
-    @objc private func openConfig() { NSWorkspace.shared.open(configURL) }
+    @objc private func showSettings() {
+        if settingsWindow == nil { settingsWindow = SettingsWindowController(store: store) }
+        settingsWindow?.show()
+    }
 
-    private func sendSelectedEmail() {
+    private func send(_ action: Action) {
         guard !busy else { return }
         busy = true
         Task {
             defer { busy = false }
             do {
+                let start = Date()
                 let email = try MailReader.readSelectedEmail()
-                var config = Config.load(from: configURL)
-                guard let target = resolveTarget(for: email, config: &config) else { return }
-                try await ClaudeBridge.deliver(email, to: target, config: config)
+                Log.write("\(action.rawValue): read email in \(Log.seconds(since: start)) (\(email.body.count) chars, \(email.attachmentPaths.count) attachments)")
+                guard let target = resolveTarget(for: email) else { return }
+                try await ClaudeBridge.deliver(email, to: target, action: action, config: store.config)
+                Log.write("\(action.rawValue): done in \(Log.seconds(since: start))")
             } catch {
                 NSSound.beep()
                 alert("Email2Claude", error.localizedDescription)
@@ -80,24 +104,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Known To address → its chat. Unknown → ask, and remember the answer. nil means the user cancelled.
-    private func resolveTarget(for email: Email, config: inout Config) -> ChatTarget? {
-        if let route = Router.route(for: email, config: config) { return route.target }
-        guard let address = Router.unknownAddress(for: email, config: config) else { return .newChat }
-        switch ChatChooser.ask(address: address, offerOnce: true) {
+    /// Known domain → its destination. Unknown → ask, and remember the answer. nil means cancelled.
+    private func resolveTarget(for email: Email) -> ChatTarget? {
+        if let route = Router.route(for: email, config: store.config) { return route.target }
+        guard let address = Router.unknownAddress(for: email, config: store.config) else { return .newChat }
+        switch RouteChooser.ask(address: address) {
         case .save(let route):
-            config.upsert(route)
-            save(config)
+            store.config.upsert(route)
             return route.target
-        case .newChatOnce:
-            return .newChat
+        case .once(let route):
+            return route.target
         case .cancel:
             return nil
         }
-    }
-
-    private func save(_ config: Config) {
-        do { try config.save(to: configURL) } catch { alert("Could not save config", error.localizedDescription) }
     }
 
     private func alert(_ title: String, _ message: String) {
