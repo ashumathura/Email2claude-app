@@ -13,6 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("Email2Claude/config.json")
 
+    // main.swift creates the delegate outside the main actor; every stored property has a default.
+    nonisolated override init() { super.init() }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(
