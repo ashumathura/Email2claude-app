@@ -44,50 +44,79 @@ struct LocalPromiseBanner: View {
 }
 
 /// The first-run question. Two equal choices, none preselected.
+///
+/// The explanation scrolls if the screen is short, but the two buttons live in a fixed bar at the
+/// bottom, so a choice is always on screen and never clipped.
 struct PrivacyChoiceView: View {
     let onChoose: (AnalyticsChoice) -> Void
 
+    /// Fits small displays: never taller than the visible screen.
+    private var windowHeight: CGFloat {
+        min(740, (NSScreen.main?.visibleFrame.height ?? 800) - 60)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 14) {
-                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 56, height: 56)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Help improve eMail to Claude?").font(.title2.weight(.semibold))
-                    Text("The app checks for updates and your license about once a week. Choose what else, if anything, you're happy to share.")
-                        .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    header
+                    LocalPromiseBanner()
+
+                    Text("Optionally, choose what else you're happy to share:")
+                        .font(.callout.weight(.medium))
+
+                    HStack(alignment: .top, spacing: 14) {
+                        card(
+                            title: "Share analytics", items: PrivacyText.sharedItems,
+                            detail: "Used to understand how the app is used and to give support.")
+                        card(
+                            title: "Don't share analytics", items: PrivacyText.minimalItems,
+                            detail: "Enough to check updates and your license.")
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    Text(PrivacyText.footer)
+                        .font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    if let url = BackendConfig.privacyPolicyURL {
+                        Link("Read the privacy policy", destination: url).font(.caption)
+                    }
                 }
+                .padding(24)
             }
 
-            LocalPromiseBanner()
+            Divider()
 
-            Text("Optionally, choose what else you're happy to share:")
-                .font(.callout.weight(.medium))
-
-            HStack(alignment: .top, spacing: 14) {
-                card(
-                    title: "Share analytics", items: PrivacyText.sharedItems,
-                    detail: "Used to understand how the app is used and to give support.",
-                    button: "Share Analytics", choice: .shared)
-                card(
-                    title: "Don't share analytics", items: PrivacyText.minimalItems,
-                    detail: "Enough to check updates and your license.",
-                    button: "Don't Share", choice: .notShared)
+            // Same order and equal weight as the cards above; neither is preselected.
+            HStack(spacing: 14) {
+                Button("Share Analytics") { onChoose(.shared) }
+                    .controlSize(.large)
+                    .frame(maxWidth: .infinity)
+                Button("Don't Share") { onChoose(.notShared) }
+                    .controlSize(.large)
+                    .frame(maxWidth: .infinity)
+                    .keyboardShortcut(.cancelAction)
             }
-
-            Text(PrivacyText.footer)
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            if let url = BackendConfig.privacyPolicyURL {
-                Link("Read the privacy policy", destination: url).font(.caption)
-            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
         }
-        .padding(24)
-        .frame(width: 680, height: 760)
+        .frame(width: 680, height: windowHeight)
         .tint(Brand.accent)
     }
 
-    private func card(title: String, items: [String], detail: String, button: String, choice: AnalyticsChoice) -> some View {
+    private var header: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 56, height: 56)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Help improve eMail to Claude?").font(.title2.weight(.semibold))
+                Text("The app checks for updates and your license about once a week. Choose what else, if anything, you're happy to share.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func card(title: String, items: [String], detail: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title).font(.headline)
             VStack(alignment: .leading, spacing: 6) {
@@ -100,11 +129,6 @@ struct PrivacyChoiceView: View {
             }
             Text(detail).font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-            Button(button) { onChoose(choice) }
-                .controlSize(.large)
-                .frame(maxWidth: .infinity)
-                .keyboardShortcut(choice == .notShared ? .cancelAction : nil)
         }
         .padding(14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
