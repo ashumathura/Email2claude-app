@@ -41,7 +41,7 @@ enum MailReader {
         }
         return Email(
             sender: text(1), subject: text(2), date: text(3),
-            to: list(4), cc: list(5), body: text(6), attachmentPaths: list(7))
+            to: list(4), cc: list(5), body: text(6), attachmentPaths: list(7), messageID: text(8))
     }
 
     /// Fetches recipients and attachment lists in single Apple Events instead of looping, and skips
@@ -55,6 +55,10 @@ enum MailReader {
             set m to item 1 of sel
             set toList to address of every to recipient of m
             set ccList to address of every cc recipient of m
+            set mid to ""
+            try
+                set mid to message id of m
+            end try
             set savedPaths to {}
             set n to 0
             repeat with a in (every mail attachment of m)
@@ -71,7 +75,7 @@ enum MailReader {
                     end if
                 end try
             end repeat
-            return {(sender of m), (subject of m), ((date received of m) as string), toList, ccList, (content of m), savedPaths}
+            return {(sender of m), (subject of m), ((date received of m) as string), toList, ccList, (content of m), savedPaths, mid}
         end tell
         """
     }

@@ -5,6 +5,7 @@ import Email2ClaudeCore
 enum ChooserResult {
     case save(Route)
     case once(Route)
+    case alwaysNewChat
     case cancel
 }
 
@@ -19,10 +20,12 @@ enum RouteChooser {
             title: "New recipient",
             subtitle: "There's no Claude destination yet for mail to \(address). Choose one and eMail to Claude will remember it.",
             initial: Route(domain: domain, kind: .newChat),
+            suggestedAddress: address,
             offersOnce: true,
             loadChats: { ClaudeSidebar.chatTitles() },
             onSave: { result = .save($0); NSApp.stopModal() },
             onOnce: { result = .once($0); NSApp.stopModal() },
+            onNeverAsk: { result = .alwaysNewChat; NSApp.stopModal() },
             onCancel: { result = .cancel; NSApp.stopModal() })
 
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))

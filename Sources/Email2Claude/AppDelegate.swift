@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import Combine
 import Email2ClaudeCore
 
 @MainActor
@@ -7,27 +8,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var settingsWindow: SettingsWindowController?
     private var store: ConfigStore!
+    private var activity: ActivityStore!
+    private var observers = Set<AnyCancellable>()
     private var busy = false {
         didSet { statusItem?.button?.alphaValue = busy ? 0.45 : 1 }
     }
 
     private static let keyCodes: [Action: Int] = [
-        .reply: kVK_ANSI_R, .summary: kVK_ANSI_S, .research: kVK_ANSI_D, .pasteOnly: kVK_ANSI_C,
+        .reply: kVK_ANSI_R, .summary: kVK_ANSI_S, .research: kVK_ANSI_D,
+        .custom1: kVK_ANSI_1, .custom2: kVK_ANSI_2, .pasteOnly: kVK_ANSI_C,
     ]
     private static let symbols: [Action: String] = [
-        .reply: "arrowshape.turn.up.left", .summary: "checklist",
-        .research: "magnifyingglass", .pasteOnly: "doc.on.clipboard",
+        .reply: "arrowshape.turn.up.left", .summary: "checklist", .research: "magnifyingglass",
+        .custom1: "sparkles", .custom2: "sparkles", .pasteOnly: "doc.on.clipboard",
     ]
+
+    /// What a route lookup (or the user's answer) decided for one email.
+    private struct Resolved {
+        let target: ChatTarget
+        let destination: Route
+        let rule: String
+    }
 
     // main.swift creates the delegate outside the main actor; every stored property has a default.
     nonisolated override init() { super.init() }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         store = ConfigStore()
+        activity = ActivityStore()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = Self.menuBarIcon()
         statusItem.button?.toolTip = "eMail to Claude"
         buildMenu()
+        // Rebuild the menu when action names change. @Published fires before the value is set,
+        // so hop to the next main-queue turn to see the new config.
+        store.$config
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.buildMenu() }
+            .store(in: &observers)
         registerHotKeys()
         _ = ClaudeBridge.accessibilityGranted(prompt: true)
     }
@@ -67,8 +86,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
 
         let sendMenu = NSMenu()
-        for action in Action.allCases {
-            let item = NSMenuItem(title: action.title, action: #selector(menuSend(_:)), keyEquivalent: action.keyEquivalent)
+        for action in Action.allCases where store.config.isConfigured(action) {
+            let item = NSMenuItem(
+                title: store.config.name(for: action), action: #selector(menuSend(_:)),
+                keyEquivalent: action.keyEquivalent)
             item.keyEquivalentModifierMask = [.option, .command]
             item.representedObject = action.rawValue
             item.image = icon(Self.symbols[action] ?? "envelope")
@@ -94,11 +115,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showSettings() {
-        if settingsWindow == nil { settingsWindow = SettingsWindowController(store: store) }
+        if settingsWindow == nil { settingsWindow = SettingsWindowController(store: store, activity: activity) }
         settingsWindow?.show()
     }
 
     private func send(_ action: Action) {
+        let config = store.config
+        guard config.isConfigured(action) else {
+            alert("This action isn't set up yet", "Give it a name and a prompt in Settings → Prompts.")
+            return
+        }
         guard !busy else { return }
         busy = true
         Task {
@@ -107,8 +133,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let start = Date()
                 let email = try MailReader.readSelectedEmail()
                 Log.write("\(action.rawValue): read email in \(Log.seconds(since: start)) (\(email.body.count) chars, \(email.attachmentPaths.count) attachments)")
-                guard let target = resolveTarget(for: email) else { return }
-                try await ClaudeBridge.deliver(email, to: target, action: action, config: store.config)
+                guard let resolved = resolveTarget(for: email) else { return }
+
+                // Paste-only sends the email alone; otherwise the prompt goes on top and, with
+                // auto-send on, the message is submitted so Claude acts on it straight away.
+                let mode = config.mode(for: action)
+                let instruction = mode == .prompt ? config.instruction(for: action) : ""
+                try await ClaudeBridge.deliver(
+                    email, to: resolved.target, instruction: instruction,
+                    sendAutomatically: mode == .prompt && config.autoSend, config: config)
+
+                if store.config.keepActivityLog {
+                    activity.append(ActivityEntry(
+                        subject: email.subject, sender: email.sender, messageID: email.messageID,
+                        rule: resolved.rule, destination: resolved.destination,
+                        actionName: config.name(for: action), mode: mode, prompt: instruction))
+                }
                 Log.write("\(action.rawValue): done in \(Log.seconds(since: start))")
             } catch {
                 NSSound.beep()
@@ -117,16 +157,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Known domain → its destination. Unknown → ask, and remember the answer. nil means cancelled.
-    private func resolveTarget(for email: Email) -> ChatTarget? {
-        if let route = Router.route(for: email, config: store.config) { return route.target }
-        guard let address = Router.unknownAddress(for: email, config: store.config) else { return .newChat }
+    /// Known route → its destination. No route → ask (unless the user chose never to be asked, in
+    /// which case it's a new chat). nil means the user cancelled.
+    private func resolveTarget(for email: Email) -> Resolved? {
+        let newChat = Resolved(target: .newChat, destination: Route(domain: "", kind: .newChat), rule: "")
+        if let route = Router.route(for: email, config: store.config) {
+            return Resolved(target: route.target, destination: route, rule: route.domain)
+        }
+        guard let address = Router.unknownAddress(for: email, config: store.config),
+              store.config.askForUnknownRoutes
+        else { return newChat }
+
         switch RouteChooser.ask(address: address) {
         case .save(let route):
             store.config.upsert(route)
-            return route.target
+            return Resolved(target: route.target, destination: route, rule: Router.normalizeRule(route.domain))
         case .once(let route):
-            return route.target
+            return Resolved(target: route.target, destination: route, rule: "")
+        case .alwaysNewChat:
+            store.config.askForUnknownRoutes = false
+            return newChat
         case .cancel:
             return nil
         }

@@ -96,46 +96,113 @@ public struct Route: Codable, Equatable, Identifiable {
     }
 }
 
+/// User overrides for one action slot. Nil fields mean "use the default".
+public struct ActionSetting: Codable, Equatable {
+    public var name: String?
+    public var mode: ActionMode?
+    public var prompt: String?
+
+    public init(name: String? = nil, mode: ActionMode? = nil, prompt: String? = nil) {
+        self.name = name
+        self.mode = mode
+        self.prompt = prompt
+    }
+
+    var isEmpty: Bool { name == nil && mode == nil && prompt == nil }
+}
+
 public struct Config: Codable, Equatable {
     public var routes: [Route]
-    /// Per-action instruction overrides, keyed by `Action.rawValue`.
-    public var instructions: [String: String]
-    /// Submit automatically for every action except Paste Only.
+    /// Per-action overrides, keyed by `Action.rawValue`.
+    public var actions: [String: ActionSetting]
+    /// Submit automatically after pasting, for actions that add a prompt.
     public var autoSend: Bool
+    /// When no route matches: ask where to send it (true) or always start a new chat (false).
+    public var askForUnknownRoutes: Bool
+    /// Keep a local log of every email sent to Claude.
+    public var keepActivityLog: Bool
     /// Minimum seconds to let Claude load a chat before pasting.
     public var openDelay: Double
 
     public init(
         routes: [Route] = [],
-        instructions: [String: String] = [:],
+        actions: [String: ActionSetting] = [:],
         autoSend: Bool = true,
+        askForUnknownRoutes: Bool = true,
+        keepActivityLog: Bool = true,
         openDelay: Double = 1.0
     ) {
         self.routes = routes
-        self.instructions = instructions
+        self.actions = actions
         self.autoSend = autoSend
+        self.askForUnknownRoutes = askForUnknownRoutes
+        self.keepActivityLog = keepActivityLog
         self.openDelay = openDelay
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case routes, actions, autoSend, askForUnknownRoutes, keepActivityLog, openDelay
+        case instructions  // written by earlier versions: prompt text per action
     }
 
     public init(from decoder: Decoder) throws {
         let d = Config()
         let c = try decoder.container(keyedBy: CodingKeys.self)
         routes = try c.decodeIfPresent([Route].self, forKey: .routes) ?? d.routes
-        instructions = try c.decodeIfPresent([String: String].self, forKey: .instructions) ?? d.instructions
+        actions = try c.decodeIfPresent([String: ActionSetting].self, forKey: .actions) ?? d.actions
         autoSend = try c.decodeIfPresent(Bool.self, forKey: .autoSend) ?? d.autoSend
+        askForUnknownRoutes = try c.decodeIfPresent(Bool.self, forKey: .askForUnknownRoutes) ?? d.askForUnknownRoutes
+        keepActivityLog = try c.decodeIfPresent(Bool.self, forKey: .keepActivityLog) ?? d.keepActivityLog
         openDelay = try c.decodeIfPresent(Double.self, forKey: .openDelay) ?? d.openDelay
+        for (key, prompt) in try c.decodeIfPresent([String: String].self, forKey: .instructions) ?? [:]
+        where actions[key]?.prompt == nil {
+            var setting = actions[key] ?? ActionSetting()
+            setting.prompt = prompt
+            actions[key] = setting
+        }
     }
 
-    public func instruction(for action: Action) -> String {
-        instructions[action.rawValue] ?? action.defaultInstruction
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(routes, forKey: .routes)
+        try c.encode(actions, forKey: .actions)
+        try c.encode(autoSend, forKey: .autoSend)
+        try c.encode(askForUnknownRoutes, forKey: .askForUnknownRoutes)
+        try c.encode(keepActivityLog, forKey: .keepActivityLog)
+        try c.encode(openDelay, forKey: .openDelay)
+    }
+
+    // MARK: Actions
+
+    public func name(for action: Action) -> String { actions[action.rawValue]?.name ?? action.defaultName }
+    public func mode(for action: Action) -> ActionMode { actions[action.rawValue]?.mode ?? action.defaultMode }
+    public func instruction(for action: Action) -> String { actions[action.rawValue]?.prompt ?? action.defaultInstruction }
+
+    /// An action appears in the menu once it has a name, and a prompt if it uses one.
+    public func isConfigured(_ action: Action) -> Bool {
+        let named = !name(for: action).trimmingCharacters(in: .whitespaces).isEmpty
+        let hasPrompt = !instruction(for: action).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return named && (mode(for: action) == .pasteOnly || hasPrompt)
+    }
+
+    public mutating func setName(_ name: String, for action: Action) {
+        update(action) { $0.name = name == action.defaultName ? nil : name }
+    }
+
+    public mutating func setMode(_ mode: ActionMode, for action: Action) {
+        update(action) { $0.mode = mode == action.defaultMode ? nil : mode }
     }
 
     public mutating func setInstruction(_ text: String, for action: Action) {
-        if text == action.defaultInstruction {
-            instructions[action.rawValue] = nil
-        } else {
-            instructions[action.rawValue] = text
-        }
+        update(action) { $0.prompt = text == action.defaultInstruction ? nil : text }
+    }
+
+    public mutating func resetAction(_ action: Action) { actions[action.rawValue] = nil }
+
+    private mutating func update(_ action: Action, _ change: (inout ActionSetting) -> Void) {
+        var setting = actions[action.rawValue] ?? ActionSetting()
+        change(&setting)
+        actions[action.rawValue] = setting.isEmpty ? nil : setting
     }
 
     public static func load(from url: URL) -> Config {

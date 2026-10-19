@@ -6,30 +6,38 @@ telling Claude what to do with it.
 
 ## Actions
 
-Menu bar icon → **Send to Claude**, or the global shortcuts:
+Menu bar icon → **Send to Claude**, or the global shortcuts. Each of the six slots has an editable
+name and a mode; the three presets and Paste Only come ready-made, the two custom slots start empty
+(they appear in the menu once named). Shortcuts are fixed.
 
-| Action | Shortcut | What Claude does |
+| Slot | Shortcut | Default |
 | --- | --- | --- |
 | Draft a Reply | ⌥⌘R | Drafts a reply to the thread |
 | Summary & Next Steps | ⌥⌘S | Summary, action items, proposed next steps |
 | Deep Dive & Research | ⌥⌘D | Same, plus web research for extra context |
+| Custom action 1 / 2 | ⌥⌘1 / ⌥⌘2 | Yours: any name and prompt |
 | Paste Only | ⌥⌘C | Pastes the email and stops, so you add your own request |
 
-The instruction for each action is editable in **Settings → Prompts**.
+Mode per slot: **paste the email only** (nothing is sent) or **add a prompt** (the prompt goes above the
+email and, with auto-send on in General, it is submitted so Claude acts at once). Settings → Prompts
+explains the effect of each mode.
 
 ## Routing
 
-Emails are routed by the **domain in the To field**: `company.com` covers mail to you or to any
-colleague there (subdomains too). A full address (`jane@gmail.com`) overrides its domain, for
-shared domains like gmail.com. Each route sends to one of:
+A route sends an email to a place in Claude based on **who it was sent to** (the To field):
 
-- **Existing chat** — one conversation that accumulates context (pick from Claude's sidebar, or paste a link)
-- **New chat in a project** — a fresh chat inside a Claude project (name, or link)
-- **New chat**
-- **Incognito chat**
+- **An email domain** — `company.com` covers you and every colleague there (subdomains too).
+- **A full address** — `me@company.com` for one person; it wins over a domain route.
 
-If an email's To domain has no route, a window asks where it should go: save it as a rule, or use it
-just this once. Everything is configured in **Settings** (menu bar icon → Settings…, ⌘,).
+Each route sends to one of: an **existing chat**, a **new chat in a project**, a **new chat**, or an
+**incognito chat**. If an email's To has no route, a window asks where it should go (save it, use it once,
+or "don't ask again, always start a new chat" — reversible in Settings → Routes).
+
+## Activity log
+
+Every email sent to Claude is logged on this Mac (date, subject, sender, route, prompt): Settings →
+Activity, searchable. Click a subject to open the email in Mail; click a route to open its chat or
+project in Claude. Claude has no way to jump to a message inside a chat. Turn it off in General.
 
 ## Setup
 1. Install the DMG and open the app (menu bar only, no Dock icon).

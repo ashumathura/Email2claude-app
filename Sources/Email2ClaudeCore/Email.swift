@@ -9,10 +9,12 @@ public struct Email: Equatable {
     public var body: String
     /// Absolute paths of attachments already saved to disk.
     public var attachmentPaths: [String]
+    /// The Message-ID header, used to jump back to the email in Mail.
+    public var messageID: String
 
     public init(
         sender: String, subject: String, date: String,
-        to: [String], cc: [String], body: String, attachmentPaths: [String]
+        to: [String], cc: [String], body: String, attachmentPaths: [String], messageID: String = ""
     ) {
         self.sender = sender
         self.subject = subject
@@ -21,6 +23,7 @@ public struct Email: Equatable {
         self.cc = cc
         self.body = body
         self.attachmentPaths = attachmentPaths
+        self.messageID = messageID
     }
 
     /// The text pasted into Claude.

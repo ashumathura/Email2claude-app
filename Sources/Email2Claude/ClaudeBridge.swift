@@ -35,7 +35,25 @@ enum ClaudeBridge {
         return AXIsProcessTrustedWithOptions(options)
     }
 
-    static func deliver(_ email: Email, to target: ChatTarget, action: Action, config: Config) async throws {
+    /// Opens the chat, project or sidebar row a past email went to. New and incognito chats have
+    /// nothing to go back to, and Claude offers no way to jump to a message inside a chat.
+    static func reveal(_ target: ChatTarget) async throws {
+        switch target {
+        case .newChat, .incognito: return
+        case .sidebar, .project: guard accessibilityGranted(prompt: true) else { throw ClaudeError.noAccessibility }
+        case .link: break
+        }
+        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: ClaudeSidebar.bundleID)
+        else { throw ClaudeError.notInstalled }
+        try await openChat(target, appURL: appURL)
+    }
+
+    /// - Parameters:
+    ///   - instruction: text placed above the email; empty to paste the email alone.
+    ///   - sendAutomatically: press Return after pasting.
+    static func deliver(
+        _ email: Email, to target: ChatTarget, instruction: String, sendAutomatically: Bool, config: Config
+    ) async throws {
         guard accessibilityGranted(prompt: true) else { throw ClaudeError.noAccessibility }
         guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: ClaudeSidebar.bundleID)
         else { throw ClaudeError.notInstalled }
@@ -54,7 +72,7 @@ enum ClaudeBridge {
         await waitForInputReady(minimumDelay: minimumLoadDelay(for: target, config: config))
         lap("wait for input")
 
-        let text = email.prompt(instruction: config.instruction(for: action))
+        let text = email.prompt(instruction: instruction)
         paste(string: text)
         await waitForPasteToSettle(characters: text.count)
         lap("paste \(text.count) chars")
@@ -68,7 +86,7 @@ enum ClaudeBridge {
             lap("attach \(email.attachmentPaths.count) files")
         }
 
-        if action.sendsAutomatically && config.autoSend { press(Key.return) }
+        if sendAutomatically { press(Key.return) }
         try await Task.sleep(for: .milliseconds(300))  // let the last paste land before restoring the clipboard
     }
 

@@ -4,6 +4,7 @@ import Email2ClaudeCore
 
 struct SettingsView: View {
     @ObservedObject var store: ConfigStore
+    @ObservedObject var activity: ActivityStore
 
     var body: some View {
         TabView {
@@ -11,11 +12,27 @@ struct SettingsView: View {
                 .tabItem { Label("Routes", systemImage: "arrow.triangle.branch") }
             PromptsTab(store: store)
                 .tabItem { Label("Prompts", systemImage: "text.bubble") }
+            ActivityTab(activity: activity)
+                .tabItem { Label("Activity", systemImage: "clock.arrow.circlepath") }
             GeneralTab(store: store)
                 .tabItem { Label("General", systemImage: "gearshape") }
         }
-        .frame(width: 660, height: 480)
+        .frame(width: 780, height: 620)
         .tint(Brand.accent)
+    }
+}
+
+/// A tinted box for explanations.
+private struct Callout<Content: View>: View {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
+
+    var body: some View {
+        content
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Brand.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
@@ -38,9 +55,7 @@ private struct RoutesTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("eMail to Claude looks at the domain in an email's To field and sends it to the destination you choose here.")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            explainer
 
             List(selection: $selection) {
                 ForEach(store.config.routes) { route in
@@ -68,12 +83,20 @@ private struct RoutesTab: View {
                 }
                 .disabled(selectedRoute == nil)
             }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Toggle("Ask where to send emails that have no route", isOn: $store.config.askForUnknownRoutes)
+                Text(store.config.askForUnknownRoutes
+                     ? "A window asks the first time you send an email to someone new, and remembers your answer."
+                     : "Emails without a route always start a new chat.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .padding(20)
         .sheet(item: $editor) { item in
             RouteEditorView(
                 title: item.isNew ? "Add Route" : "Edit Route",
-                subtitle: "Choose the domain and where Claude should receive its emails.",
+                subtitle: "Choose who the email is sent to, and where Claude should receive it.",
                 initial: item.route,
                 offersOnce: false,
                 loadChats: { ClaudeSidebar.chatTitles() },
@@ -87,10 +110,48 @@ private struct RoutesTab: View {
         }
     }
 
+    private var explainer: some View {
+        Callout {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("How routes work").font(.headline)
+                Text("A route decides where an email goes in Claude, based on who it was sent to (the To field). A route can match:")
+                    .fixedSize(horizontal: false, vertical: true)
+                ExampleRow(
+                    symbol: "person.crop.circle", title: "A full email address",
+                    example: "me@company.com", result: "Claude chat “Me”")
+                ExampleRow(
+                    symbol: "building.2", title: "An email domain",
+                    example: "company.com", result: "Claude project “Company”",
+                    note: "covers you and every colleague at that domain")
+                Text("If both match, the full address wins. Only the To field is checked, not Cc or Bcc.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private func remove() {
         guard let route = selectedRoute else { return }
         store.config.routes.removeAll { $0.id == route.id }
         selection = nil
+    }
+}
+
+private struct ExampleRow: View {
+    let symbol: String
+    let title: String
+    let example: String
+    let result: String
+    var note: String?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: symbol).frame(width: 22).foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.body.weight(.semibold))
+                Text("Email sent to **\(example)** → \(result)")
+                if let note { Text(note).font(.callout).foregroundStyle(.secondary) }
+            }
+        }
     }
 }
 
@@ -103,7 +164,13 @@ private struct RouteRow: View {
                 .frame(width: 22)
                 .foregroundStyle(.tint)
             VStack(alignment: .leading, spacing: 2) {
-                Text(route.domain).font(.body.weight(.medium))
+                HStack(spacing: 6) {
+                    Text(route.domain).font(.body.weight(.medium))
+                    Text(route.isAddressRule ? "Address" : "Domain")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 1)
+                        .background(.quaternary, in: Capsule())
+                }
                 Text(route.destinationDescription).font(.callout).foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -117,52 +184,232 @@ private struct RouteRow: View {
 
 private struct PromptsTab: View {
     @ObservedObject var store: ConfigStore
-    @State private var action: Action = .reply
+    @State private var selected: Action? = .reply
 
-    private var text: Binding<String> {
-        Binding(
-            get: { store.config.instruction(for: action) },
-            set: { store.config.setInstruction($0, for: action) })
+    var body: some View {
+        HStack(spacing: 0) {
+            List(Action.allCases, selection: $selected) { action in
+                ActionRow(name: store.config.name(for: action), placeholder: action.placeholderName,
+                          shortcut: action.shortcutLabel, configured: store.config.isConfigured(action))
+                    .tag(action)
+            }
+            .listStyle(.sidebar)
+            .frame(width: 240)
+
+            Divider()
+
+            ActionDetail(store: store, action: selected ?? .reply)
+                .id(selected)
+        }
+    }
+}
+
+private struct ActionRow: View {
+    let name: String
+    let placeholder: String
+    let shortcut: String
+    let configured: Bool
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name.isEmpty ? placeholder : name)
+                    .foregroundStyle(name.isEmpty ? .secondary : .primary)
+                if !configured {
+                    Text("Not in the menu yet").font(.caption).foregroundStyle(.orange)
+                }
+            }
+            Spacer()
+            Text(shortcut).font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+private struct ActionDetail: View {
+    @ObservedObject var store: ConfigStore
+    let action: Action
+
+    private var name: Binding<String> {
+        Binding(get: { store.config.name(for: action) }, set: { store.config.setName($0, for: action) })
+    }
+    private var mode: Binding<ActionMode> {
+        Binding(get: { store.config.mode(for: action) }, set: { store.config.setMode($0, for: action) })
+    }
+    private var prompt: Binding<String> {
+        Binding(get: { store.config.instruction(for: action) }, set: { store.config.setInstruction($0, for: action) })
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Picker("Action", selection: $action) {
-                ForEach(Action.allCases) { Text($0.title).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(action.detail)
-                    Spacer()
+        Form {
+            Section {
+                TextField("Name", text: name, prompt: Text(action.placeholderName))
+                LabeledContent("Shortcut") {
                     Text(action.shortcutLabel)
                         .font(.system(.callout, design: .rounded).weight(.medium))
                         .padding(.horizontal, 8).padding(.vertical, 2)
                         .background(.quaternary, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
-                .foregroundStyle(.secondary)
+            } header: {
+                Text("Menu item")
+            } footer: {
+                if store.config.isConfigured(action) {
+                    Text("Shown under Send to Claude in the menu bar.")
+                } else {
+                    Text("This action appears in the menu once it has a name\(mode.wrappedValue == .prompt ? " and a prompt" : "").")
+                        .foregroundStyle(.orange)
+                }
             }
 
-            TextEditor(text: text)
-                .font(.body)
-                .scrollContentBackground(.hidden)
-                .padding(8)
-                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(.separator))
+            Section {
+                Picker("After pasting", selection: mode) {
+                    ForEach(ActionMode.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.radioGroup)
+                Callout { explanation }
+            } header: {
+                Text("What happens to the email")
+            }
+
+            if mode.wrappedValue == .prompt {
+                Section {
+                    TextEditor(text: prompt)
+                        .font(.body)
+                        .frame(minHeight: 120)
+                } header: {
+                    Text("Prompt")
+                } footer: {
+                    Text("Placed above the email in Claude.")
+                }
+            }
+
+            Section {
+                Button("Reset to Default") { store.config.resetAction(action) }
+                    .disabled(store.config.actions[action.rawValue] == nil)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    /// Spells out what the chosen mode does, including the effect of the auto-send setting.
+    @ViewBuilder private var explanation: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            switch mode.wrappedValue {
+            case .pasteOnly:
+                Label("The email is pasted into the routed Claude chat, and nothing else happens.", systemImage: "doc.on.clipboard")
+                Text("Nothing is sent. Type your own request in Claude, then press Return.")
+                    .foregroundStyle(.secondary)
+            case .prompt:
+                Label("Your prompt is placed above the email, and both are pasted into the routed Claude chat.", systemImage: "text.bubble")
+                if store.config.autoSend {
+                    Text("Then it is sent right away, so Claude starts working on it immediately.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Auto-send is off, so it waits in Claude's message box until you press Return.")
+                        .foregroundStyle(.secondary)
+                }
+                Text("Turn auto-send on or off in General.").font(.caption).foregroundStyle(.secondary)
+            }
+            Text("Either way, the email's From, To, Cc, date, subject, body and attachments are included.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+// MARK: - Activity
+
+private struct ActivityTab: View {
+    @ObservedObject var activity: ActivityStore
+    @State private var query = ""
+    @State private var confirmClear = false
+
+    private var rows: [ActivityEntry] { activity.entries.filter { $0.matches(query) } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Search subject, sender, route or prompt", text: $query)
+                    .textFieldStyle(.roundedBorder)
+                Text("\(rows.count) of \(activity.entries.count)")
+                    .font(.callout).foregroundStyle(.secondary).monospacedDigit()
+            }
+
+            Table(rows) {
+                TableColumn("Date") { entry in
+                    Text(entry.date.formatted(date: .abbreviated, time: .shortened))
+                        .foregroundStyle(.secondary)
+                }
+                .width(min: 110, ideal: 130, max: 170)
+                TableColumn("Subject") { entry in
+                    if let url = entry.mailURL {
+                        Button(entry.subject.isEmpty ? "(no subject)" : entry.subject) {
+                            NSWorkspace.shared.open(url)
+                        }
+                        .buttonStyle(.link)
+                        .help("Open this email in Mail")
+                    } else {
+                        Text(entry.subject.isEmpty ? "(no subject)" : entry.subject)
+                    }
+                }
+                TableColumn("From") { entry in
+                    Text(entry.sender).lineLimit(1)
+                }
+                TableColumn("Claude route") { entry in
+                    if entry.canOpenChat {
+                        Button(entry.routeText) { openChat(entry) }
+                            .buttonStyle(.link)
+                            .help("Open this chat or project in Claude")
+                    } else {
+                        Text(entry.routeText)
+                    }
+                }
+                TableColumn("Prompt") { entry in
+                    Text(entry.actionName)
+                        .help(entry.prompt.isEmpty ? "Pasted the email only" : entry.prompt)
+                }
+                .width(min: 90, ideal: 120)
+            }
+            .overlay {
+                if activity.entries.isEmpty {
+                    Text("Nothing here yet.\nEmails you send to Claude are listed here.")
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                } else if rows.isEmpty {
+                    Text("No matches.").foregroundStyle(.secondary)
+                }
+            }
 
             HStack {
-                Text(action == .pasteOnly
-                     ? "Optional text placed above the email. Paste Only never sends it for you."
-                     : "This text is placed above the email in Claude.")
+                Text("Stored only on this Mac. Click a subject to open the email in Mail, or a route to open its chat in Claude.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("Reset to Default") { store.config.setInstruction(action.defaultInstruction, for: action) }
-                    .disabled(store.config.instruction(for: action) == action.defaultInstruction)
+                Button("Show Log File") { activity.revealInFinder() }
+                Button("Clear Log…") { confirmClear = true }
+                    .disabled(activity.entries.isEmpty)
             }
         }
         .padding(20)
+        .alert("Clear the activity log?", isPresented: $confirmClear) {
+            Button("Clear Log", role: .destructive) { activity.clear() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This only removes the list in this app. Your emails and Claude chats are not touched.")
+        }
+    }
+
+    private func openChat(_ entry: ActivityEntry) {
+        Task {
+            do {
+                try await ClaudeBridge.reveal(entry.destination.target)
+            } catch {
+                let panel = NSAlert()
+                panel.messageText = "eMail to Claude"
+                panel.informativeText = error.localizedDescription
+                panel.runModal()
+            }
+        }
     }
 }
 
@@ -177,7 +424,13 @@ private struct GeneralTab: View {
             Section {
                 Toggle("Send to Claude automatically", isOn: $store.config.autoSend)
             } footer: {
-                Text("Draft a Reply, Summary and Deep Dive are submitted right away. Paste Only never submits, so you can add your own request first.")
+                Text("For actions that add a prompt, the message is submitted right after pasting. Actions set to paste the email only never submit.")
+            }
+
+            Section {
+                Toggle("Keep an activity log", isOn: $store.config.keepActivityLog)
+            } footer: {
+                Text("Records the date, subject, sender, route and prompt of each email on this Mac only. See the Activity tab.")
             }
 
             Section {
@@ -224,8 +477,9 @@ private struct GeneralTab: View {
 
 @MainActor
 final class SettingsWindowController: NSWindowController {
-    init(store: ConfigStore) {
-        let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(store: store)))
+    init(store: ConfigStore, activity: ActivityStore) {
+        let view = SettingsView(store: store, activity: activity)
+        let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.title = "eMail to Claude Settings"
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
