@@ -10,9 +10,14 @@ final class UpdateManager: ObservableObject {
     @Published private(set) var busy = false
     /// The latest result, shown in Settings.
     @Published private(set) var status = ""
+    /// Set to ask the Settings window to jump to the License & Privacy tab.
+    @Published var showLicenseTab = false
+    /// Opens Settings; wired up by the app delegate.
+    var openSettings: (() -> Void)?
 
     private let store: ConfigStore
     private var recheckLoop: Task<Void, Never>?
+    private var licenseCheck: Task<Void, Never>?
     private let interval: TimeInterval = 7 * 24 * 3600
     private let notifiedBlockedKey = "notifiedBlockedVersion"
 
@@ -38,6 +43,20 @@ final class UpdateManager: ObservableObject {
 
     func checkNow() {
         Task { await run(event: .updateCheck, manual: true) }
+    }
+
+    /// Called when the license key field changes: once the key looks complete, check it
+    /// straight away so the status updates and a waiting update can be offered.
+    func licenseKeyEdited() {
+        guard BackendConfig.isPackagedApp else { return }
+        licenseCheck?.cancel()
+        store.config.lastLicenseStatus = nil
+        guard store.config.licenseKey.trimmingCharacters(in: .whitespacesAndNewlines).count >= 27 else { return }
+        licenseCheck = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(800))
+            guard !Task.isCancelled else { return }
+            await self?.run(event: .updateCheck, manual: false, wantsUpdate: true, quiet: true)
+        }
     }
 
     /// Tell the server about a changed analytics choice right away, so opting out clears the data now.
@@ -72,7 +91,7 @@ final class UpdateManager: ObservableObject {
             licenseKey: config.licenseKey.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
-    private func run(event: CheckinRequest.Event, manual: Bool, wantsUpdate: Bool? = nil) async {
+    private func run(event: CheckinRequest.Event, manual: Bool, wantsUpdate: Bool? = nil, quiet: Bool = false) async {
         guard !busy else { return }
         let wants = wantsUpdate ?? (manual || updateCheckDue)
         // Timer ticks only matter when the weekly check has come due.
@@ -85,7 +104,7 @@ final class UpdateManager: ObservableObject {
             guard wants else { return }
             store.config.lastUpdateCheck = Date()
             store.config.lastLicenseStatus = response.license
-            await handle(response, manual: manual)
+            await handle(response, manual: manual, quiet: quiet)
         } catch {
             Log.write("check-in failed: \(error.localizedDescription)")
             if wants { status = "Couldn't check for updates: \(error.localizedDescription)" }
@@ -93,7 +112,7 @@ final class UpdateManager: ObservableObject {
         }
     }
 
-    private func handle(_ response: CheckinResponse, manual: Bool) async {
+    private func handle(_ response: CheckinResponse, manual: Bool, quiet: Bool) async {
         if let update = response.update {
             guard Checkin.meetsMinimum(system: BackendConfig.systemVersion, minimum: update.minMacos) else {
                 status = "Version \(update.version) needs macOS \(update.minMacos ?? "")."
@@ -105,15 +124,22 @@ final class UpdateManager: ObservableObject {
         } else if let blocked = response.updateBlocked {
             status = "Version \(blocked.version) is available, but \(Checkin.explain(licenseStatus: blocked.reason))."
             let seen = UserDefaults.standard.string(forKey: notifiedBlockedKey)
-            if manual || seen != blocked.version {
+            if !quiet && (manual || seen != blocked.version) {
                 UserDefaults.standard.set(blocked.version, forKey: notifiedBlockedKey)
-                alert(
-                    "Version \(blocked.version) is available",
-                    "It can't be downloaded because \(Checkin.explain(licenseStatus: blocked.reason)). Enter a valid license key in Settings → License & Privacy.")
+                let panel = NSAlert()
+                panel.messageText = "Version \(blocked.version) is available"
+                panel.informativeText = "It can't be downloaded because \(Checkin.explain(licenseStatus: blocked.reason)). Enter a valid license key in Settings → License & Privacy."
+                panel.addButton(withTitle: "Open Settings")
+                panel.addButton(withTitle: "Not Now")
+                NSApp.activate(ignoringOtherApps: true)
+                if panel.runModal() == .alertFirstButtonReturn {
+                    showLicenseTab = true
+                    openSettings?()
+                }
             }
         } else {
             status = "You're up to date (version \(BackendConfig.appVersion))."
-            if manual { alert("You're up to date", "eMail to Claude \(BackendConfig.appVersion) is the latest version.") }
+            if manual && !quiet { alert("You're up to date", "eMail to Claude \(BackendConfig.appVersion) is the latest version.") }
         }
     }
 

@@ -44,6 +44,14 @@ struct SettingsView: View {
         .frame(width: 780, height: min(700, (NSScreen.main?.visibleFrame.height ?? 800) - 60))
         .background(Color(nsColor: .windowBackgroundColor))
         .tint(Brand.accent)
+        .onAppear { jumpToLicenseIfAsked() }
+        .onChange(of: updates.showLicenseTab) { _ in jumpToLicenseIfAsked() }
+    }
+
+    private func jumpToLicenseIfAsked() {
+        guard updates.showLicenseTab else { return }
+        tab = .account
+        updates.showLicenseTab = false
     }
 
     /// A toolbar-style tab bar inside the window, with room above it and one background all the way down.
@@ -632,11 +640,12 @@ private struct AccountTab: View {
             Section {
                 TextField("License key", text: $store.config.licenseKey, prompt: Text("EMC-XXXXX-XXXXX-XXXXX-XXXXX"))
                     .font(.system(.body, design: .monospaced))
+                    .onChange(of: store.config.licenseKey) { _ in updates.licenseKeyEdited() }
                 LabeledContent("Status") { licenseStatus }
             } header: {
                 Text("License")
             } footer: {
-                Text("Your license is checked about once a week, when the app looks for updates. A valid license lets you download updates. The app itself keeps working either way.")
+                Text("Your license is checked as soon as you enter it, and then about once a week when the app looks for updates. A valid license lets you download updates. The app itself keeps working either way.")
             }
 
             Section {
