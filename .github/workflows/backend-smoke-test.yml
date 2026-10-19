@@ -1,0 +1,17 @@
+name: Backend smoke test
+
+# Calls the live check-in function with a reserved test device ID (00000000-0000-4000-8000-000000000001).
+
+on:
+  workflow_dispatch:
+    inputs:
+      final_state:
+        description: "What the test leaves behind: analytics, minimal or erase"
+        default: erase
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/backend-smoke-test.sh "${{ inputs.final_state }}"

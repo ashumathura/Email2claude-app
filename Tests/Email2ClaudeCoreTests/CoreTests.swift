@@ -7,44 +7,67 @@ final class CoreTests: XCTestCase {
               to: to, cc: cc, body: "Body", attachmentPaths: ["/tmp/a/invoice.pdf"])
     }
 
+    // MARK: Routing
+
     func testNormalize() {
         XCTAssertEqual(Router.normalize("Ann Lee <Ann@Work.COM>"), "ann@work.com")
-        XCTAssertEqual(Router.normalize(" a@b.com "), "a@b.com")
+        XCTAssertEqual(Router.normalizeRule(" @Acme.COM "), "acme.com")
+        XCTAssertEqual(Router.domain(of: "a@b.co.uk"), "b.co.uk")
+        XCTAssertNil(Router.domain(of: "nodomain"))
     }
 
-    func testExactAndDomainRoutes() {
-        let config = Config(routes: [
-            Route(address: "sales@acme.com", chatTitle: "A"),
-            Route(address: "@acme.com", chatTitle: "B"),
-        ])
-        XCTAssertEqual(Router.route(for: email(to: ["Sales@Acme.com"]), config: config)?.chatTitle, "A")
-        XCTAssertEqual(Router.route(for: email(to: ["dev@acme.com"]), config: config)?.chatTitle, "B")
-        XCTAssertNil(Router.route(for: email(to: ["z@other.com"]), config: config))
+    func testDomainRouteMatchesAnyPersonAndSubdomains() {
+        let config = Config(routes: [Route(domain: "acme.com", kind: .project, name: "Acme")])
+        for to in ["me@acme.com", "Jane <jane@Acme.com>", "x@mail.acme.com"] {
+            XCTAssertEqual(Router.route(for: email(to: [to]), config: config)?.name, "Acme", to)
+        }
+        XCTAssertNil(Router.route(for: email(to: ["x@notacme.com"]), config: config))
+        XCTAssertNil(Router.route(for: email(to: ["x@other.com"]), config: config))
+    }
+
+    func testAnyToRecipientCanMatch() {
+        let config = Config(routes: [Route(domain: "acme.com", kind: .newChat)])
+        XCTAssertNotNil(Router.route(for: email(to: ["me@mine.com", "jane@acme.com"]), config: config))
+    }
+
+    func testAddressRuleBeatsDomainRule() {
+        var config = Config()
+        config.upsert(Route(domain: "gmail.com", kind: .chat, name: "Everyone"))
+        config.upsert(Route(domain: "Jane@Gmail.com", kind: .chat, name: "Jane"))
+        XCTAssertEqual(Router.route(for: email(to: ["jane@gmail.com"]), config: config)?.name, "Jane")
+        XCTAssertEqual(Router.route(for: email(to: ["bob@gmail.com"]), config: config)?.name, "Everyone")
     }
 
     func testOnlyToIsMatchedNotCc() {
-        let config = Config(routes: [Route(address: "dev@acme.com", chatTitle: "B")])
+        let config = Config(routes: [Route(domain: "acme.com")])
         XCTAssertNil(Router.route(for: email(to: ["z@other.com"], cc: ["dev@acme.com"]), config: config))
     }
 
     func testUnknownAddress() {
-        let config = Config(routes: [Route(address: "known@x.com", chatTitle: "K")])
+        let config = Config(routes: [Route(domain: "known.com")])
         XCTAssertEqual(Router.unknownAddress(for: email(to: ["New <New@X.com>", "other@x.com"]), config: config), "new@x.com")
-        XCTAssertNil(Router.unknownAddress(for: email(to: ["known@x.com"]), config: config))
+        XCTAssertNil(Router.unknownAddress(for: email(to: ["a@known.com"]), config: config))
     }
 
-    func testTargetPrefersLinkOverTitle() {
-        XCTAssertEqual(Route(address: "a", chatTitle: "T", chatURL: "https://claude.ai/chat/1").target,
-                       .link(URL(string: "claude://claude.ai/chat/1")!))
-        XCTAssertEqual(Route(address: "a", chatTitle: "T").target, .sidebar(title: "T"))
-        XCTAssertEqual(Route(address: "a", chatURL: "garbage").target, .newChat)
-    }
-
-    func testUpsertReplacesSameAddress() {
+    func testUpsertReplacesSameDomain() {
         var config = Config()
-        config.upsert(Route(address: " A@B.com ", chatTitle: "one"))
-        config.upsert(Route(address: "a@b.com", chatTitle: "two"))
-        XCTAssertEqual(config.routes, [Route(address: "a@b.com", chatTitle: "two")])
+        config.upsert(Route(domain: " @A.com ", kind: .chat, name: "one"))
+        config.upsert(Route(domain: "a.com", kind: .incognito))
+        XCTAssertEqual(config.routes, [Route(domain: "a.com", kind: .incognito)])
+    }
+
+    // MARK: Targets
+
+    func testTargets() {
+        XCTAssertEqual(Route(domain: "a", kind: .chat, name: "T", url: "https://claude.ai/chat/1").target,
+                       .link(URL(string: "claude://claude.ai/chat/1")!))
+        XCTAssertEqual(Route(domain: "a", kind: .chat, name: "T").target, .sidebar(title: "T"))
+        XCTAssertEqual(Route(domain: "a", kind: .chat, url: "garbage").target, .newChat)
+        XCTAssertEqual(Route(domain: "a", kind: .project, name: "P").target, .project(name: "P", link: nil))
+        XCTAssertEqual(Route(domain: "a", kind: .project, url: "https://claude.ai/project/9").target,
+                       .project(name: "", link: URL(string: "claude://claude.ai/project/9")!))
+        XCTAssertEqual(Route(domain: "a", kind: .project).target, .newChat)
+        XCTAssertEqual(Route(domain: "a", kind: .incognito).target, .incognito)
     }
 
     func testChatLink() {
@@ -53,20 +76,213 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(ChatLink.appURL(from: "https://example.com/chat/abc"))
     }
 
+    // MARK: Prompt & actions
+
     func testPrompt() {
         let text = email(to: ["me@x.com"]).prompt(instruction: "Reply please")
         XCTAssertTrue(text.hasPrefix("Reply please\n\nFrom: Bob <bob@x.com>"))
         XCTAssertTrue(text.contains("Attachments: invoice.pdf"))
+        XCTAssertTrue(email(to: ["me@x.com"]).prompt(instruction: "").hasPrefix("From: Bob"))
     }
 
-    func testConfigRoundTripAndPartialJSON() throws {
+    func testActionSlots() {
+        XCTAssertEqual(Action.allCases.count, 6)
+        XCTAssertEqual(Set(Action.allCases.map(\.keyEquivalent)).count, 6)
+        XCTAssertEqual(Action.reply.shortcutLabel, "⌥⌘R")
+        XCTAssertEqual(Action.custom1.shortcutLabel, "⌥⌘1")
+        XCTAssertEqual(Action.pasteOnly.defaultMode, .pasteOnly)
+    }
+
+    func testActionDefaultsAndOverrides() {
+        var config = Config()
+        XCTAssertEqual(config.name(for: .summary), "Summary & Next Steps")
+        XCTAssertEqual(config.mode(for: .summary), .prompt)
+        XCTAssertEqual(config.instruction(for: .summary), Action.summary.defaultInstruction)
+
+        config.setName("Brief", for: .summary)
+        config.setMode(.pasteOnly, for: .summary)
+        config.setInstruction("Mine", for: .summary)
+        XCTAssertEqual(config.name(for: .summary), "Brief")
+        XCTAssertEqual(config.mode(for: .summary), .pasteOnly)
+        XCTAssertEqual(config.instruction(for: .summary), "Mine")
+
+        config.setName("Summary & Next Steps", for: .summary)
+        config.setMode(.prompt, for: .summary)
+        config.setInstruction(Action.summary.defaultInstruction, for: .summary)
+        XCTAssertTrue(config.actions.isEmpty, "defaults are not stored")
+    }
+
+    func testResetAction() {
+        var config = Config()
+        config.setName("X", for: .reply)
+        config.resetAction(.reply)
+        XCTAssertEqual(config.name(for: .reply), "Draft a Reply")
+    }
+
+    func testIsConfigured() {
+        var config = Config()
+        XCTAssertTrue(config.isConfigured(.reply))
+        XCTAssertTrue(config.isConfigured(.pasteOnly))
+        XCTAssertFalse(config.isConfigured(.custom1), "custom slots start empty")
+        config.setName("Translate", for: .custom1)
+        XCTAssertFalse(config.isConfigured(.custom1), "a prompt action needs a prompt")
+        config.setInstruction("Translate to Dutch", for: .custom1)
+        XCTAssertTrue(config.isConfigured(.custom1))
+        config.setInstruction("", for: .custom1)
+        config.setMode(.pasteOnly, for: .custom1)
+        XCTAssertTrue(config.isConfigured(.custom1), "paste-only needs only a name")
+    }
+
+    // MARK: Persistence
+
+    func testConfigRoundTrip() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("e2c-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: url) }
-        var config = Config(); config.routes = [Route(address: "a@b.com", chatTitle: "X")]
+        var config = Config()
+        config.upsert(Route(domain: "a.com", kind: .project, name: "P", url: "https://claude.ai/project/1"))
+        config.setInstruction("X", for: .reply)
+        config.setName("Custom", for: .custom2)
+        config.askForUnknownRoutes = false
         try config.save(to: url)
         XCTAssertEqual(Config.load(from: url), config)
+    }
+
+    func testPartialJSONUsesDefaults() throws {
         let partial = try JSONDecoder().decode(Config.self, from: Data(#"{"autoSend":false}"#.utf8))
         XCTAssertFalse(partial.autoSend)
-        XCTAssertEqual(partial.openDelay, 1.5)
+        XCTAssertEqual(partial.openDelay, 1.0)
+        XCTAssertTrue(partial.askForUnknownRoutes)
+        XCTAssertTrue(partial.keepActivityLog)
+    }
+
+    func testLegacyRoutesStillDecode() throws {
+        let json = #"{"routes":[{"address":"@acme.com","chatTitle":"Acme chat"},{"address":"x@y.com"}],"instruction":"old"}"#
+        let config = try JSONDecoder().decode(Config.self, from: Data(json.utf8))
+        XCTAssertEqual(config.routes[0].kind, .chat)
+        XCTAssertEqual(config.routes[0].name, "Acme chat")
+        XCTAssertEqual(config.routes[1].kind, .newChat)
+        let email = Email(sender: "", subject: "", date: "", to: ["bob@acme.com"], cc: [], body: "", attachmentPaths: [])
+        XCTAssertEqual(Router.route(for: email, config: config)?.name, "Acme chat")
+        XCTAssertEqual(config.instruction(for: .reply), "old", "the original single prompt becomes the reply prompt")
+        XCTAssertEqual(config.name(for: .reply), "Draft a Reply")
+
+        let perAction = try JSONDecoder().decode(
+            Config.self, from: Data(#"{"instructions":{"summary":"sum","reply":"rep"}}"#.utf8))
+        XCTAssertEqual(perAction.instruction(for: .summary), "sum")
+        XCTAssertEqual(perAction.instruction(for: .reply), "rep")
+    }
+
+    // MARK: Check-in and updates
+
+    func testVersionOrdering() {
+        XCTAssertTrue(AppVersion.isNewer("0.10.0", than: "0.9.2"))
+        XCTAssertTrue(AppVersion.isNewer("1.0", than: "0.9.9"))
+        XCTAssertFalse(AppVersion.isNewer("1.0.0", than: "1.0"))
+        XCTAssertFalse(AppVersion.isNewer("0.1.0", than: "0.2.0"))
+        XCTAssertEqual(AppVersion.compare("2.0.1", "2.0.1"), .orderedSame)
+        XCTAssertTrue(Checkin.meetsMinimum(system: "14.1", minimum: "13.0"))
+        XCTAssertFalse(Checkin.meetsMinimum(system: "12.7.4", minimum: "13.0"))
+        XCTAssertTrue(Checkin.meetsMinimum(system: "13.0", minimum: nil))
+    }
+
+    func testRequestUsesSnakeCaseKeys() throws {
+        let request = CheckinRequest(
+            deviceId: "11111111-1111-1111-1111-111111111111", event: .updateCheck, analytics: true,
+            wantsUpdate: true, appVersion: "0.1.0", macosVersion: "14.1", osLanguage: "en-NL", licenseKey: "EMC-1")
+        let object = try JSONSerialization.jsonObject(with: Checkin.encoder.encode(request)) as? [String: Any]
+        XCTAssertEqual(object?["device_id"] as? String, "11111111-1111-1111-1111-111111111111")
+        XCTAssertEqual(object?["event"] as? String, "update_check")
+        XCTAssertEqual(object?["wants_update"] as? Bool, true)
+        XCTAssertEqual(object?["macos_version"] as? String, "14.1")
+        XCTAssertEqual(object?["os_language"] as? String, "en-NL")
+        XCTAssertEqual(object?["license_key"] as? String, "EMC-1")
+        XCTAssertNotNil(object?["app_version"])
+    }
+
+    func testResponseDecoding() throws {
+        let full = #"{"ok":true,"license":"valid","latest_version":"0.2.0","update":{"version":"0.2.0","notes":null,"sha256":"ab","min_macos":"13.0","url":"https://x.supabase.co/signed?token=1"}}"#
+        let response = try Checkin.decoder.decode(CheckinResponse.self, from: Data(full.utf8))
+        XCTAssertEqual(response.license, "valid")
+        XCTAssertEqual(response.update?.version, "0.2.0")
+        XCTAssertEqual(response.update?.minMacos, "13.0")
+        XCTAssertNil(response.update?.notes)
+        XCTAssertNil(response.updateBlocked)
+
+        let blocked = #"{"ok":true,"license":"missing","latest_version":"0.2.0","update_blocked":{"version":"0.2.0","reason":"missing"}}"#
+        let withheld = try Checkin.decoder.decode(CheckinResponse.self, from: Data(blocked.utf8))
+        XCTAssertNil(withheld.update)
+        XCTAssertEqual(withheld.updateBlocked?.reason, "missing")
+
+        let plain = try Checkin.decoder.decode(CheckinResponse.self, from: Data(#"{"ok":true}"#.utf8))
+        XCTAssertNil(plain.license)
+    }
+
+    func testPrivacyAndLicenseSettingsPersist() throws {
+        var config = Config()
+        XCTAssertEqual(config.analyticsChoice, .unset, "nothing is shared until the user answers")
+        config.analyticsChoice = .shared
+        config.licenseKey = "EMC-AAAAA"
+        config.lastLicenseStatus = "valid"
+        config.lastUpdateCheck = Date(timeIntervalSince1970: 1_800_000_000)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("e2c-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try config.save(to: url)
+        XCTAssertEqual(Config.load(from: url), config)
+    }
+
+    // MARK: Activity log
+
+    func testMailLink() {
+        XCTAssertEqual(MailLink.url(messageID: "ABC@host.com")?.absoluteString, "message://%3CABC%40host.com%3E")
+        XCTAssertEqual(MailLink.url(messageID: " <ABC@host.com> ")?.absoluteString, "message://%3CABC%40host.com%3E")
+        XCTAssertNil(MailLink.url(messageID: "  "))
+    }
+
+    private func entry(subject: String, sender: String = "bob@x.com", rule: String = "acme.com",
+                       destination: Route = Route(domain: "acme.com", kind: .project, name: "Acme"),
+                       action: String = "Draft a Reply") -> ActivityEntry {
+        ActivityEntry(subject: subject, sender: sender, messageID: "id@x", rule: rule,
+                      destination: destination, actionName: action, mode: .prompt, prompt: "Do it")
+    }
+
+    func testActivitySearch() {
+        let e = entry(subject: "Quarterly Invoice")
+        XCTAssertTrue(e.matches(""))
+        XCTAssertTrue(e.matches("invoice"))
+        XCTAssertTrue(e.matches("INVOICE bob acme"))
+        XCTAssertTrue(e.matches("project"), "searches the route text")
+        XCTAssertTrue(e.matches("reply"), "searches the action name")
+        XCTAssertFalse(e.matches("invoice zebra"))
+    }
+
+    func testActivityRouteText() {
+        XCTAssertEqual(entry(subject: "s").routeText, "acme.com → New chat in project: Acme")
+        let none = entry(subject: "s", rule: "", destination: Route(domain: "", kind: .newChat))
+        XCTAssertEqual(none.routeText, "No route · New chat each time")
+        XCTAssertTrue(entry(subject: "s").canOpenChat)
+        XCTAssertFalse(none.canOpenChat)
+        XCTAssertFalse(entry(subject: "s", destination: Route(domain: "a", kind: .incognito)).canOpenChat)
+    }
+
+    func testActivityFileRoundTrip() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("e2c-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertEqual(ActivityFile.load(from: url), [])
+        let first = entry(subject: "One"), second = entry(subject: "Two")
+        try ActivityFile.append(first, to: url)
+        try ActivityFile.append(second, to: url)
+        try Data("not json\n".utf8).appendTo(url)
+        let loaded = ActivityFile.load(from: url)
+        XCTAssertEqual(loaded.map(\.subject), ["One", "Two"])
+        XCTAssertEqual(loaded[0].destination, first.destination)
+    }
+}
+
+private extension Data {
+    func appendTo(_ url: URL) throws {
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: self)
     }
 }
