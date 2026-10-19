@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store = ConfigStore()
         activity = ActivityStore()
         updates = UpdateManager(store: store)
+        updates.openSettings = { [weak self] in self?.showSettings() }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = Self.menuBarIcon()
         statusItem.button?.toolTip = "eMail to Claude"
