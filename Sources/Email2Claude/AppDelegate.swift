@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import Combine
+import SwiftUI
 import Email2ClaudeCore
 
 @MainActor
@@ -10,18 +11,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var store: ConfigStore!
     private var activity: ActivityStore!
     private var updates: UpdateManager!
-    private var observers = Set<AnyCancellable>()
+    private let popover = NSPopover()
+    private let menuState = MenuState()
     private var busy = false {
-        didSet { statusItem?.button?.alphaValue = busy ? 0.45 : 1 }
+        didSet {
+            statusItem?.button?.alphaValue = busy ? 0.45 : 1
+            menuState.busy = busy
+        }
     }
 
     private static let keyCodes: [Action: Int] = [
         .reply: kVK_ANSI_R, .summary: kVK_ANSI_S, .research: kVK_ANSI_D,
         .custom1: kVK_ANSI_1, .custom2: kVK_ANSI_2, .pasteOnly: kVK_ANSI_C,
-    ]
-    private static let symbols: [Action: String] = [
-        .reply: "arrowshape.turn.up.left", .summary: "checklist", .research: "magnifyingglass",
-        .custom1: "sparkles", .custom2: "sparkles", .pasteOnly: "doc.on.clipboard",
     ]
 
     /// What a route lookup (or the user's answer) decided for one email.
@@ -42,14 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = Self.menuBarIcon()
         statusItem.button?.toolTip = "MailtoChat"
-        buildMenu()
-        // Rebuild the menu when action names change. @Published fires before the value is set,
-        // so hop to the next main-queue turn to see the new config.
-        store.$config
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.buildMenu() }
-            .store(in: &observers)
+        setUpPanel()
         registerHotKeys()
         MailReader.sweepOldAttachmentFolders()
         // Ask about analytics before anything contacts the server or asks for permissions.
@@ -89,10 +83,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return NSImage(systemSymbolName: "envelope.arrow.triangle.branch", accessibilityDescription: "MailtoChat")
     }
 
-    private func icon(_ symbol: String) -> NSImage? {
-        NSImage(systemSymbolName: symbol, accessibilityDescription: "MailtoChat")
-    }
-
     private func registerHotKeys() {
         var failed: [String] = []
         for action in Action.allCases {
@@ -108,46 +98,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func buildMenu() {
-        let menu = NSMenu()
+    /// The menu-bar icon opens a panel (like OneDrive's) instead of a menu: the actions are listed
+    /// directly, with the app's own commands below a divider. It updates itself when settings change.
+    private func setUpPanel() {
+        let view = MenuPanelView(
+            store: store, state: menuState,
+            onSend: { [weak self] action in
+                self?.closePanel()
+                // Let the panel finish closing so focus is back where it was before the email is read.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { self?.send(action) }
+            },
+            onCheckUpdates: { [weak self] in self?.closePanel(); self?.updates.checkNow() },
+            onSettings: { [weak self] in self?.closePanel(); self?.showSettings() },
+            onSupport: { [weak self] in self?.closePanel(); Donate.showDialog() },
+            onQuit: { NSApp.terminate(nil) })
+        let controller = NSHostingController(rootView: view)
+        controller.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = controller
+        popover.behavior = .transient
+        popover.animates = true
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(togglePanel)
+    }
 
-        let sendMenu = NSMenu()
-        for action in Action.allCases where store.config.isConfigured(action) {
-            let item = NSMenuItem(
-                title: store.config.name(for: action), action: #selector(menuSend(_:)),
-                keyEquivalent: action.keyEquivalent)
-            item.keyEquivalentModifierMask = [.option, .command]
-            item.representedObject = action.rawValue
-            item.image = icon(Self.symbols[action] ?? "envelope")
-            item.target = self
-            sendMenu.addItem(item)
+    @objc private func togglePanel() {
+        if popover.isShown {
+            closePanel()
+        } else if let button = statusItem.button {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
-        let sendItem = NSMenuItem(title: "Send to Claude", action: nil, keyEquivalent: "")
-        sendItem.image = icon("paperplane")
-        sendItem.submenu = sendMenu
-        menu.addItem(sendItem)
-
-        menu.addItem(.separator())
-        let update = menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
-        update.target = self
-        let settings = menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
-        settings.target = self
-        let donate = menu.addItem(withTitle: "Support the App…", action: #selector(showDonate), keyEquivalent: "")
-        donate.image = icon("heart")
-        donate.target = self
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit MailtoChat", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        statusItem.menu = menu
     }
 
-    @objc private func menuSend(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let action = Action(rawValue: raw) else { return }
-        send(action)
-    }
-
-    @objc private func checkForUpdates() { updates.checkNow() }
-
-    @objc private func showDonate() { Donate.showDialog() }
+    private func closePanel() { popover.performClose(nil) }
 
     @objc private func showSettings() {
         if settingsWindow == nil { settingsWindow = SettingsWindowController(store: store, activity: activity, updates: updates) }
