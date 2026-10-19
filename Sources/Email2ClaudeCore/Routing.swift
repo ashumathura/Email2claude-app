@@ -123,8 +123,7 @@ public enum ChatLink {
     public static let incognitoURL = URL(string: "claude://claude.ai/new?incognito")!
 
     /// Converts https://claude.ai/chat/<id> into the desktop app's claude:// form.
-    /// claude:// links pass through unchanged, and so does any other http(s) address, which is meant
-    /// for the default browser (see `isWebLink`). Returns nil for anything that isn't a link.
+    /// claude:// links pass through unchanged. Returns nil for anything else.
     public static func appURL(from string: String) -> URL? {
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard var comps = URLComponents(string: trimmed), let scheme = comps.scheme?.lowercased()
@@ -135,16 +134,8 @@ public enum ChatLink {
         case "https" where comps.host?.lowercased() == "claude.ai":
             comps.scheme = "claude"
             return comps.url
-        case "http", "https":
-            return comps.host?.isEmpty == false ? comps.url : nil
         default:
             return nil
         }
-    }
-
-    /// True for http(s) addresses, which open in the default browser rather than the Claude app.
-    public static func isWebLink(_ url: URL) -> Bool {
-        let scheme = url.scheme?.lowercased()
-        return scheme == "http" || scheme == "https"
     }
 }
