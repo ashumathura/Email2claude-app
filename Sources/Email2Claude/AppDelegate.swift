@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import Combine
+import SwiftUI
 import Email2ClaudeCore
 
 @MainActor
