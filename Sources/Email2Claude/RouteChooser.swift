@@ -17,7 +17,7 @@ enum RouteChooser {
 
         let view = RouteEditorView(
             title: "New recipient",
-            subtitle: "There's no Claude destination yet for mail to \(address). Choose one and Email2Claude will remember it.",
+            subtitle: "There's no Claude destination yet for mail to \(address). Choose one and eMail to Claude will remember it.",
             initial: Route(domain: domain, kind: .newChat),
             offersOnce: true,
             loadChats: { ClaudeSidebar.chatTitles() },
@@ -27,7 +27,7 @@ enum RouteChooser {
 
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.styleMask = [.titled]
-        window.title = "Email2Claude"
+        window.title = "eMail to Claude"
         window.isReleasedWhenClosed = false
         window.level = .floating
         window.center()

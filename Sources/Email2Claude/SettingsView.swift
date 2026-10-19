@@ -15,6 +15,7 @@ struct SettingsView: View {
                 .tabItem { Label("General", systemImage: "gearshape") }
         }
         .frame(width: 660, height: 480)
+        .tint(Brand.accent)
     }
 }
 
@@ -37,7 +38,7 @@ private struct RoutesTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Email2Claude looks at the domain in an email's To field and sends it to the destination you choose here.")
+            Text("eMail to Claude looks at the domain in an email's To field and sends it to the destination you choose here.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -212,7 +213,7 @@ private struct GeneralTab: View {
             } header: {
                 Text("Permissions")
             } footer: {
-                Text("Accessibility lets Email2Claude read Claude's chat list and paste into it.")
+                Text("Accessibility lets eMail to Claude read Claude's chat list and paste into it.")
             }
         }
         .formStyle(.grouped)
@@ -225,7 +226,7 @@ private struct GeneralTab: View {
 final class SettingsWindowController: NSWindowController {
     init(store: ConfigStore) {
         let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(store: store)))
-        window.title = "Email2Claude Settings"
+        window.title = "eMail to Claude Settings"
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
         super.init(window: window)

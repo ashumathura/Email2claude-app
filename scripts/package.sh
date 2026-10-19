@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds dist/Email2Claude.app and dist/Email2Claude.dmg for Apple Silicon.
+# Builds "dist/eMail to Claude.app" and dist/eMail-to-Claude.dmg for Apple Silicon.
 #
 # Optional environment (all three groups needed for a notarized build):
 #   SIGN_IDENTITY   "Developer ID Application: Name (TEAMID)"; unset = ad-hoc signing
@@ -8,11 +8,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-NAME=Email2Claude
+EXECUTABLE=Email2Claude
+DISPLAY_NAME="eMail to Claude"
 VERSION=${VERSION:-0.1.0}
 IDENTITY=${SIGN_IDENTITY:--}
-APP=dist/$NAME.app
-DMG=dist/$NAME.dmg
+APP="dist/$DISPLAY_NAME.app"
+DMG="dist/eMail-to-Claude.dmg"
 
 sign() {
     if [ "$IDENTITY" = "-" ]; then
@@ -32,22 +33,33 @@ swift build -c release --arch arm64
 BIN=$(swift build -c release --arch arm64 --show-bin-path)
 
 rm -rf dist
-mkdir -p "$APP/Contents/MacOS"
-cp "$BIN/$NAME" "$APP/Contents/MacOS/$NAME"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp "$BIN/$EXECUTABLE" "$APP/Contents/MacOS/$EXECUTABLE"
 sed "s/__VERSION__/$VERSION/g" Resources/Info.plist > "$APP/Contents/Info.plist"
-sign --entitlements Resources/$NAME.entitlements "$APP"
+cp Resources/MenuBarIcon.png "$APP/Contents/Resources/"
+
+# App icon: build AppIcon.icns from the 1024 px master.
+ICONSET=$(mktemp -d)/AppIcon.iconset
+mkdir -p "$ICONSET"
+for size in 16 32 128 256 512; do
+    sips -z $size $size Resources/AppIcon.png --out "$ICONSET/icon_${size}x${size}.png" > /dev/null
+    sips -z $((size * 2)) $((size * 2)) Resources/AppIcon.png --out "$ICONSET/icon_${size}x${size}@2x.png" > /dev/null
+done
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+
+sign --entitlements Resources/$EXECUTABLE.entitlements "$APP"
 
 if [ -n "${APPLE_ID:-}" ] && [ "$IDENTITY" != "-" ]; then
-    ditto -c -k --keepParent "$APP" dist/$NAME.zip
-    notarize dist/$NAME.zip
+    ditto -c -k --keepParent "$APP" dist/notarize.zip
+    notarize dist/notarize.zip
     xcrun stapler staple "$APP"
-    rm dist/$NAME.zip
+    rm dist/notarize.zip
 fi
 
 STAGE=$(mktemp -d)
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
-hdiutil create -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+hdiutil create -volname "$DISPLAY_NAME" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 rm -rf "$STAGE"
 
 sign "$DMG"

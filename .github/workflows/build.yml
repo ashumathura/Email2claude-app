@@ -43,5 +43,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Email2Claude-dmg
-          path: dist/Email2Claude.dmg
+          name: eMail-to-Claude-dmg
+          path: dist/eMail-to-Claude.dmg

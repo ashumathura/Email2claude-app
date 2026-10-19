@@ -116,15 +116,14 @@ struct RouteEditorView: View {
             footer
         }
         .frame(width: 520, height: 540)
+        .tint(Brand.accent)
     }
 
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
-            Image(systemName: "envelope.badge")
-                .font(.system(size: 26))
-                .foregroundStyle(.white)
-                .frame(width: 48, height: 48)
-                .background(.tint, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 52, height: 52)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.title3.weight(.semibold))
                 Text(subtitle).font(.callout).foregroundStyle(.secondary)

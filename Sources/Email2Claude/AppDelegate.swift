@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: SettingsWindowController?
     private var store: ConfigStore!
     private var busy = false {
-        didSet { statusItem?.button?.image = icon(busy ? "hourglass" : "envelope.arrow.triangle.branch") }
+        didSet { statusItem?.button?.alphaValue = busy ? 0.45 : 1 }
     }
 
     private static let keyCodes: [Action: Int] = [
@@ -25,14 +25,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         store = ConfigStore()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = icon("envelope.arrow.triangle.branch")
+        statusItem.button?.image = Self.menuBarIcon()
+        statusItem.button?.toolTip = "eMail to Claude"
         buildMenu()
         registerHotKeys()
         _ = ClaudeBridge.accessibilityGranted(prompt: true)
     }
 
+    /// The brand glyph from the app bundle, as a template image so macOS tints it for light and dark
+    /// menu bars. Falls back to a system symbol when running outside the bundle (swift run).
+    private static func menuBarIcon() -> NSImage? {
+        if let url = Bundle.main.url(forResource: "MenuBarIcon", withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            image.size = NSSize(width: 20, height: 20)
+            image.isTemplate = true
+            return image
+        }
+        return NSImage(systemSymbolName: "envelope.arrow.triangle.branch", accessibilityDescription: "eMail to Claude")
+    }
+
     private func icon(_ symbol: String) -> NSImage? {
-        NSImage(systemSymbolName: symbol, accessibilityDescription: "Email2Claude")
+        NSImage(systemSymbolName: symbol, accessibilityDescription: "eMail to Claude")
     }
 
     private func registerHotKeys() {
@@ -71,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settings = menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Email2Claude", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit eMail to Claude", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
     }
 
@@ -99,7 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.write("\(action.rawValue): done in \(Log.seconds(since: start))")
             } catch {
                 NSSound.beep()
-                alert("Email2Claude", error.localizedDescription)
+                alert("eMail to Claude", error.localizedDescription)
             }
         }
     }
