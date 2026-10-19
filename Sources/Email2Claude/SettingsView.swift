@@ -2,26 +2,91 @@ import AppKit
 import SwiftUI
 import Email2ClaudeCore
 
+private enum SettingsTabID: String, CaseIterable, Identifiable {
+    case routes, prompts, activity, general, account
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .routes: return "Routes"
+        case .prompts: return "Prompts"
+        case .activity: return "Activity"
+        case .general: return "General"
+        case .account: return "License & Privacy"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .routes: return "arrow.triangle.branch"
+        case .prompts: return "text.bubble"
+        case .activity: return "clock.arrow.circlepath"
+        case .general: return "gearshape"
+        case .account: return "key"
+        }
+    }
+}
+
 struct SettingsView: View {
     @ObservedObject var store: ConfigStore
     @ObservedObject var activity: ActivityStore
     @ObservedObject var updates: UpdateManager
+    @State private var tab: SettingsTabID = .routes
 
     var body: some View {
-        TabView {
-            RoutesTab(store: store)
-                .tabItem { Label("Routes", systemImage: "arrow.triangle.branch") }
-            PromptsTab(store: store)
-                .tabItem { Label("Prompts", systemImage: "text.bubble") }
-            ActivityTab(activity: activity)
-                .tabItem { Label("Activity", systemImage: "clock.arrow.circlepath") }
-            GeneralTab(store: store)
-                .tabItem { Label("General", systemImage: "gearshape") }
-            AccountTab(store: store, updates: updates)
-                .tabItem { Label("License & Privacy", systemImage: "key") }
+        VStack(spacing: 0) {
+            tabBar
+            Divider()
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(width: 780, height: min(700, (NSScreen.main?.visibleFrame.height ?? 800) - 60))
+        .background(Color(nsColor: .windowBackgroundColor))
         .tint(Brand.accent)
+    }
+
+    /// A toolbar-style tab bar inside the window, with room above it and one background all the way down.
+    private var tabBar: some View {
+        HStack(spacing: 6) {
+            ForEach(SettingsTabID.allCases) { item in
+                Button { tab = item } label: {
+                    VStack(spacing: 4) {
+                        Image(systemName: item.symbol).font(.system(size: 19))
+                        Text(item.title).font(.caption)
+                    }
+                    .foregroundStyle(tab == item ? Brand.accent : Color.secondary)
+                    .frame(width: 118, height: 54)
+                    .background(
+                        tab == item ? Brand.accent.opacity(0.13) : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(tab == item ? .isSelected : [])
+            }
+        }
+        .padding(.top, 14)
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder private var content: some View {
+        switch tab {
+        case .routes: RoutesTab(store: store)
+        case .prompts: PromptsTab(store: store)
+        case .activity: ActivityTab(activity: activity)
+        case .general: GeneralTab(store: store)
+        case .account: AccountTab(store: store, updates: updates)
+        }
+    }
+}
+
+private extension View {
+    /// Secondary text on a tinted box. The system's .secondary grey nearly fades into the tint,
+    /// so use the primary colour at reduced strength instead.
+    func calloutNote(_ font: Font = .callout) -> some View {
+        self.font(font).foregroundStyle(Color.primary.opacity(0.78))
     }
 }
 
@@ -139,7 +204,7 @@ private struct RoutesTab: View {
                     example: "company.com", result: "Claude project “Company”",
                     note: "a client you write to and hear from needs one From route and one To route")
                 Text("A full address beats a domain. Otherwise the route higher in the list wins, so drag to reorder. No match: the app asks, or starts a new chat.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .calloutNote()
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -196,7 +261,7 @@ private struct ExampleRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.body.weight(.semibold))
                 Text("Email matching **\(example)** → \(result)")
-                if let note { Text(note).font(.callout).foregroundStyle(.secondary) }
+                if let note { Text(note).calloutNote() }
             }
         }
     }
@@ -366,20 +431,20 @@ private struct ActionDetail: View {
             case .pasteOnly:
                 Label("The email is pasted into the routed Claude chat, and nothing else happens.", systemImage: "doc.on.clipboard")
                 Text("Nothing is sent. Type your own request in Claude, then press Return.")
-                    .foregroundStyle(.secondary)
+                    .calloutNote()
             case .prompt:
                 Label("Your prompt is placed above the email, and both are pasted into the routed Claude chat.", systemImage: "text.bubble")
                 if store.config.autoSend {
                     Text("Then it is sent right away, so Claude starts working on it immediately.")
-                        .foregroundStyle(.secondary)
+                        .calloutNote()
                 } else {
                     Text("Auto-send is off, so it waits in Claude's message box until you press Return.")
-                        .foregroundStyle(.secondary)
+                        .calloutNote()
                 }
-                Text("Turn auto-send on or off in General.").font(.caption).foregroundStyle(.secondary)
+                Text("Turn auto-send on or off in General.").calloutNote(.caption)
             }
             Text("Either way, the email's From, To, Cc, date, subject, body and attachments are included.")
-                .font(.caption).foregroundStyle(.secondary)
+                .calloutNote(.caption)
         }
         .fixedSize(horizontal: false, vertical: true)
     }
