@@ -11,9 +11,9 @@ extension DestinationKind {
         }
     }
 
-    func summary(for provider: ChatProvider) -> String {
+    var summary: String {
         switch self {
-        case .chat: return "Every email goes into one conversation, so \(provider.title) builds up context over time."
+        case .chat: return "Every email goes into one conversation, so Claude builds up context over time."
         case .project: return "Each email starts a new chat inside the project, which shares the project's knowledge."
         case .newChat: return "Each email starts a fresh chat."
         case .incognito: return "Each email starts a private chat that isn't saved to your history."
@@ -47,8 +47,6 @@ struct RouteEditorView: View {
     @State private var matchType: MatchType
     @State private var matchText: String
     @State private var lastSuggested: String?
-    @State private var provider: ChatProvider
-    @State private var useApp: Bool
     @State private var kind: DestinationKind
     @State private var name: String
     @State private var url: String
@@ -79,8 +77,6 @@ struct RouteEditorView: View {
         _matchType = State(initialValue: type)
         _matchText = State(initialValue: text)
         _lastSuggested = State(initialValue: Self.suggestedText(suggestions, initial.matchOn, type))
-        _provider = State(initialValue: initial.provider)
-        _useApp = State(initialValue: initial.useApp)
         _kind = State(initialValue: initial.kind)
         _name = State(initialValue: initial.name ?? "")
         _url = State(initialValue: initial.url ?? "")
@@ -118,36 +114,20 @@ struct RouteEditorView: View {
         let usesDetails = kind == .chat || kind == .project
         return Route(
             domain: ruleValue, matchOn: field, kind: kind,
-            // Only the Claude app can look a chat or project up by name.
-            name: usesDetails && claudeApp && !trimmedName.isEmpty ? trimmedName : nil,
+            name: usesDetails && !trimmedName.isEmpty ? trimmedName : nil,
             url: usesDetails && !trimmedURL.isEmpty ? trimmedURL : nil,
-            instructions: trimmedInstructions.isEmpty ? nil : trimmedInstructions,
-            provider: provider, useApp: useApp)
+            instructions: trimmedInstructions.isEmpty ? nil : trimmedInstructions)
     }
-
-    /// True when the Claude desktop app is the destination (chats can then be found by title).
-    private var claudeApp: Bool { provider == .claude && useApp }
 
     private var linkIsValid: Bool {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty || provider.accepts(link: trimmed)
-    }
-
-    /// Why the link was rejected: not a link at all, or a link to a different service.
-    private var linkProblem: String {
-        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard ChatLink.appURL(from: trimmed) != nil else {
-            return "That doesn't look like a link. It should start with https://\(provider.linkHost)/"
-        }
-        return "That isn't a \(provider.title) link. \(provider.title) links start with https://\(provider.linkHost)/"
+        return trimmed.isEmpty || ChatLink.appURL(from: trimmed) != nil
     }
 
     private var isValid: Bool {
         guard !ruleValue.isEmpty, ruleError == nil, linkIsValid else { return false }
         switch kind {
-        case .chat, .project:
-            // Outside the Claude app there is no search by name, so a link is required.
-            return claudeApp ? (draft.name != nil || draft.url != nil) : draft.url != nil
+        case .chat, .project: return draft.name != nil || draft.url != nil
         case .newChat, .incognito: return true
         }
     }
@@ -226,26 +206,16 @@ struct RouteEditorView: View {
                 .disabled(neverAsk)
 
                 Section {
-                    Picker("Chat service", selection: $provider) {
-                        ForEach(ChatProvider.allCases) { Text($0.title).tag($0) }
-                    }
-                    if provider.hasDesktopApp {
-                        Picker("Open in", selection: $useApp) {
-                            Text("\(provider.title) app").tag(true)
-                            Text("Browser").tag(false)
-                        }
-                        .pickerStyle(.segmented)
-                    }
                     Picker("Send it to", selection: $kind) {
-                        ForEach(provider.supportedKinds) { option in
-                            Label(provider.title(for: option), systemImage: option.symbol).tag(option)
+                        ForEach(DestinationKind.allCases) { option in
+                            Label(option.title, systemImage: option.symbol).tag(option)
                         }
                     }
                     details
                 } header: {
-                    Text("…put it in \(provider.title)")
+                    Text("…put it in Claude")
                 } footer: {
-                    Text(destinationNote)
+                    Text(kind.summary)
                 }
                 .disabled(neverAsk)
 
@@ -253,7 +223,7 @@ struct RouteEditorView: View {
                     TextEditor(text: $instructions)
                         .font(.body)
                         .frame(minHeight: 60)
-                    DisclosureGroup("Preview what \(provider.title) receives") {
+                    DisclosureGroup("Preview what Claude receives") {
                         Text(preview)
                             .font(.system(.caption, design: .monospaced))
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -285,10 +255,6 @@ struct RouteEditorView: View {
             .formStyle(.grouped)
             .onChange(of: matchType) { _ in refreshText() }
             .onChange(of: field) { _ in refreshText() }
-            .onChange(of: provider) { new in
-                useApp = new == .claude  // the browser is the safer default for the other services
-                if !new.supportedKinds.contains(kind) { kind = .newChat }
-            }
 
             footer
         }
@@ -316,20 +282,16 @@ struct RouteEditorView: View {
     @ViewBuilder private var details: some View {
         switch kind {
         case .chat:
-            if claudeApp {
-                Picker("Chat", selection: $name) {
-                    Text(chatChoices.isEmpty ? "No chats found" : "Choose a chat…").tag("")
-                    ForEach(chatChoices, id: \.self) { Text($0).tag($0) }
-                }
-                Button("Refresh Chat List") { chats = loadChats() }
-                    .buttonStyle(.link)
+            Picker("Chat", selection: $name) {
+                Text(chatChoices.isEmpty ? "No chats found" : "Choose a chat…").tag("")
+                ForEach(chatChoices, id: \.self) { Text($0).tag($0) }
             }
-            linkField(placeholder: provider.chatLinkExample, label: "Chat link")
+            Button("Refresh Chat List") { chats = loadChats() }
+                .buttonStyle(.link)
+            linkField(placeholder: "https://claude.ai/chat/…", label: "Chat link")
         case .project:
-            if claudeApp {
-                TextField("Project name", text: $name, prompt: Text("Exactly as shown in Claude"))
-            }
-            linkField(placeholder: provider.projectLinkExample, label: "Project link")
+            TextField("Project name", text: $name, prompt: Text("Exactly as shown in Claude"))
+            linkField(placeholder: "https://claude.ai/project/…", label: "Project link")
         case .newChat, .incognito:
             EmptyView()
         }
@@ -337,27 +299,14 @@ struct RouteEditorView: View {
 
     private func linkField(placeholder: String, label: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            TextField(label, text: $url, prompt: Text(claudeApp ? placeholder + " (optional)" : placeholder), axis: .vertical)
+            TextField(label, text: $url, prompt: Text(placeholder + " (optional)"), axis: .vertical)
                 .lineLimit(2...5)
             if !linkIsValid {
-                Text(linkProblem).font(.caption).foregroundStyle(.red)
+                Text("That doesn't look like a claude.ai link.").font(.caption).foregroundStyle(.red)
             } else if url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(claudeApp
-                     ? "A link is the most reliable way to find it. It opens in the Claude app."
-                     : "Required. Open the \(kind == .project ? "project" : "chat") in \(provider.title) and copy its address from the browser.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text("A link is the most reliable way to find it.").font(.caption).foregroundStyle(.secondary)
             }
         }
-    }
-
-    /// Under the destination: what this choice does, and what to expect outside the Claude app.
-    private var destinationNote: String {
-        let summary = kind.summary(for: provider)
-        if claudeApp { return summary }
-        if provider.hasDesktopApp && useApp {
-            return summary + " In the \(provider.title) app only new chats are supported; links to existing chats open in your browser. Experimental."
-        }
-        return summary + " Opens in your browser, so you need to be signed in to \(provider.title) there. Experimental: the app waits a few seconds for the page to load before pasting."
     }
 
     private var footer: some View {
