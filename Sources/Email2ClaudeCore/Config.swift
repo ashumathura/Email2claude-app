@@ -142,7 +142,8 @@ public struct Config: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case routes, actions, autoSend, askForUnknownRoutes, keepActivityLog, openDelay
-        case instructions  // written by earlier versions: prompt text per action
+        // Written by earlier versions: one reply prompt, then a prompt per action.
+        case instruction, instructions
     }
 
     public init(from decoder: Decoder) throws {
@@ -154,8 +155,11 @@ public struct Config: Codable, Equatable {
         askForUnknownRoutes = try c.decodeIfPresent(Bool.self, forKey: .askForUnknownRoutes) ?? d.askForUnknownRoutes
         keepActivityLog = try c.decodeIfPresent(Bool.self, forKey: .keepActivityLog) ?? d.keepActivityLog
         openDelay = try c.decodeIfPresent(Double.self, forKey: .openDelay) ?? d.openDelay
-        for (key, prompt) in try c.decodeIfPresent([String: String].self, forKey: .instructions) ?? [:]
-        where actions[key]?.prompt == nil {
+        var legacy = try c.decodeIfPresent([String: String].self, forKey: .instructions) ?? [:]
+        if let single = try c.decodeIfPresent(String.self, forKey: .instruction), legacy[Action.reply.rawValue] == nil {
+            legacy[Action.reply.rawValue] = single
+        }
+        for (key, prompt) in legacy where actions[key]?.prompt == nil {
             var setting = actions[key] ?? ActionSetting()
             setting.prompt = prompt
             actions[key] = setting

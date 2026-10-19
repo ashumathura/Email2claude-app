@@ -163,8 +163,13 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(config.routes[1].kind, .newChat)
         let email = Email(sender: "", subject: "", date: "", to: ["bob@acme.com"], cc: [], body: "", attachmentPaths: [])
         XCTAssertEqual(Router.route(for: email, config: config)?.name, "Acme chat")
-        XCTAssertEqual(config.instruction(for: .reply), "old", "legacy prompt text carries over")
+        XCTAssertEqual(config.instruction(for: .reply), "old", "the original single prompt becomes the reply prompt")
         XCTAssertEqual(config.name(for: .reply), "Draft a Reply")
+
+        let perAction = try JSONDecoder().decode(
+            Config.self, from: Data(#"{"instructions":{"summary":"sum","reply":"rep"}}"#.utf8))
+        XCTAssertEqual(perAction.instruction(for: .summary), "sum")
+        XCTAssertEqual(perAction.instruction(for: .reply), "rep")
     }
 
     // MARK: Activity log
