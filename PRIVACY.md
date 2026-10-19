@@ -1,4 +1,4 @@
-# Privacy policy: eMail to Claude (draft)
+# Privacy policy: MailtoChat (draft)
 
 > This is a starting point written from how the app works. It is not legal advice. Have it reviewed, fill in
 > the controller's details, and publish it at a public URL; then set `BackendConfig.privacyPolicyURL`
@@ -7,7 +7,7 @@
 **Controller:** [Name, address, contact email]
 
 ## Your emails never leave your Mac
-eMail to Claude reads the email you select in Apple Mail and pastes it into the Claude desktop app on your
+MailtoChat reads the email you select in Apple Mail and pastes it into the Claude desktop app on your
 Mac. Your emails and attachments are not sent to the developer or to any server operated by the developer.
 Once an email is in Claude it is handled under Claude's own terms and privacy settings.
 Attachments are saved briefly in a temporary folder on your Mac, readable only by you, and deleted after use.

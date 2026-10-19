@@ -104,7 +104,7 @@ enum EmailSignup {
             onDone: { NSApp.stopModal() })
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.styleMask = [.titled]
-        window.title = "eMail to Claude"
+        window.title = "MailtoChat"
         window.isReleasedWhenClosed = false
         window.level = .floating
         window.center()

@@ -1,4 +1,4 @@
-# Releasing eMail to Claude
+# Releasing MailtoChat
 
 How a new version gets from this repo to users' Macs, and how licenses work.
 

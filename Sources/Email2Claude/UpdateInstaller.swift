@@ -179,26 +179,33 @@ enum UpdateInstaller {
         let destination = Bundle.main.bundleURL
         let parent = destination.deletingLastPathComponent()
         if destination.path.hasPrefix("/Volumes/") || destination.path.contains("/AppTranslocation/") {
-            throw UpdateError.cannotInstallHere("Move eMail to Claude to your Applications folder first, then update.")
+            throw UpdateError.cannotInstallHere("Move MailtoChat to your Applications folder first, then update.")
         }
         guard FileManager.default.isWritableFile(atPath: parent.path) else {
             throw UpdateError.cannotInstallHere("This app can't replace itself in \(parent.path).")
         }
 
+        // The update may carry a new app name (the file is renamed along with it), unless another
+        // app of that name already sits next to this one; then the old file name is kept.
+        let renamed = parent.appendingPathComponent(staged.lastPathComponent)
+        let target = FileManager.default.fileExists(atPath: renamed.path) ? destination : renamed
+
         let script = """
         #!/bin/bash
-        PID="$1"; SRC="$2"; DEST="$3"
+        PID="$1"; SRC="$2"; DEST="$3"; TARGET="$4"
         for _ in $(seq 1 150); do kill -0 "$PID" 2>/dev/null || break; sleep 0.2; done
         BACKUP="${DEST}.old"
+        OPEN="$DEST"
         rm -rf "$BACKUP"
         if mv "$DEST" "$BACKUP"; then
-          if ditto "$SRC" "$DEST"; then
+          if ditto "$SRC" "$TARGET"; then
             rm -rf "$BACKUP" "$SRC"
+            OPEN="$TARGET"
           else
-            rm -rf "$DEST"; mv "$BACKUP" "$DEST"
+            rm -rf "$TARGET"; mv "$BACKUP" "$DEST"
           fi
         fi
-        open "$DEST"
+        open "$OPEN"
         """
         let scriptURL = FileManager.default.temporaryDirectory.appendingPathComponent("E2C-update-\(UUID().uuidString).sh")
         try script.write(to: scriptURL, atomically: true, encoding: .utf8)
@@ -206,7 +213,7 @@ enum UpdateInstaller {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/nohup")
-        process.arguments = ["/bin/bash", scriptURL.path, String(ProcessInfo.processInfo.processIdentifier), staged.path, destination.path]
+        process.arguments = ["/bin/bash", scriptURL.path, String(ProcessInfo.processInfo.processIdentifier), staged.path, destination.path, target.path]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice

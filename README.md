@@ -1,4 +1,4 @@
-# eMail to Claude
+# MailtoChat
 
 Menu-bar app for Apple Silicon Macs (see BRAND.md for colors and icons). Select an email in Mail, press a shortcut, and the email
 (text, headers, attachments) is pasted into the right Claude desktop chat, with an instruction
@@ -69,7 +69,7 @@ Timings for each step are appended to `~/Library/Logs/Email2Claude.log`. Setting
 
 ## Build
 - `swift test` — routing, actions and config tests (macOS)
-- `./scripts/package.sh` — builds `dist/eMail-to-Claude.dmg`
+- `./scripts/package.sh` — builds `dist/MailtoChat.dmg`
 - CI (`.github/workflows/build.yml`) does the same on an Apple Silicon runner. For a notarized DMG
   set secrets `MACOS_CERT_P12`, `MACOS_CERT_PASSWORD`, `MACOS_SIGN_IDENTITY`, `APPLE_ID`,
   `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD`. Without them the DMG is ad-hoc signed (right-click → Open).

@@ -11,7 +11,7 @@ enum ClaudeError: LocalizedError {
         switch self {
         case .notInstalled: return "The Claude desktop app was not found."
         case .noAccessibility:
-            return "Accessibility permission is required to paste into Claude. Enable eMail to Claude in System Settings → Privacy & Security → Accessibility."
+            return "Accessibility permission is required to paste into Claude. Enable MailtoChat in System Settings → Privacy & Security → Accessibility."
         case .chatNotFound(let title):
             return "Couldn't find the chat “\(title)” in Claude's sidebar. Scroll it into view, or route this domain by chat link instead."
         case .projectNotFound(let name):

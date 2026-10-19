@@ -152,7 +152,7 @@ final class UpdateManager: ObservableObject {
             }
         } else {
             status = "You're up to date (version \(BackendConfig.appVersion))."
-            if manual && !quiet { alert("You're up to date", "eMail to Claude \(BackendConfig.appVersion) is the latest version.") }
+            if manual && !quiet { alert("You're up to date", "MailtoChat \(BackendConfig.appVersion) is the latest version.") }
         }
     }
 
@@ -160,7 +160,7 @@ final class UpdateManager: ObservableObject {
 
     private func confirmInstall(_ update: UpdateInfo) -> Bool {
         let panel = NSAlert()
-        panel.messageText = "eMail to Claude \(update.version) is available"
+        panel.messageText = "MailtoChat \(update.version) is available"
         var text = "You have version \(BackendConfig.appVersion)."
         if let notes = update.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
             text += "\n\n" + String(notes.prefix(800))
@@ -208,7 +208,7 @@ final class UpdateManager: ObservableObject {
     private func offerManualInstall(dmg: URL, update: UpdateInfo, reason: String) {
         let panel = NSAlert()
         panel.messageText = "Install version \(update.version) yourself"
-        panel.informativeText = "\(reason)\n\nThe update was downloaded. Open it, then drag eMail to Claude into Applications."
+        panel.informativeText = "\(reason)\n\nThe update was downloaded. Open it, then drag MailtoChat into Applications."
         panel.addButton(withTitle: "Open Installer")
         panel.addButton(withTitle: "Cancel")
         NSApp.activate(ignoringOtherApps: true)
@@ -217,7 +217,7 @@ final class UpdateManager: ObservableObject {
             return
         }
         let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-        let target = downloads.appendingPathComponent("eMail-to-Claude-\(update.version).dmg")
+        let target = downloads.appendingPathComponent("MailtoChat-\(update.version).dmg")
         try? FileManager.default.removeItem(at: target)
         do {
             try FileManager.default.moveItem(at: dmg, to: target)
@@ -246,7 +246,7 @@ final class UpdateProgressWindow {
     init(version: String) {
         panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 360, height: 96), styleMask: [.titled], backing: .buffered, defer: false)
-        panel.title = "Updating eMail to Claude"
+        panel.title = "Updating MailtoChat"
         panel.level = .floating
         panel.isReleasedWhenClosed = false
 

@@ -18,8 +18,8 @@ enum RouteChooser {
         let address = suggestion.address(for: suggestion.field) ?? ""
         let domain = Router.domain(of: address) ?? address
         let subtitle = suggestion.field == .from
-            ? "There's no Claude destination yet for mail received from \(address). Choose one and eMail to Claude will remember it."
-            : "There's no Claude destination yet for mail sent to \(address). Choose one and eMail to Claude will remember it."
+            ? "There's no Claude destination yet for mail received from \(address). Choose one and MailtoChat will remember it."
+            : "There's no Claude destination yet for mail sent to \(address). Choose one and MailtoChat will remember it."
 
         let view = RouteEditorView(
             title: "No route for this email yet",
@@ -36,7 +36,7 @@ enum RouteChooser {
 
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.styleMask = [.titled]
-        window.title = "eMail to Claude"
+        window.title = "MailtoChat"
         window.isReleasedWhenClosed = false
         window.level = .floating
         window.center()
