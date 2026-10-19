@@ -23,26 +23,50 @@ public enum ChatTarget: Equatable {
     case incognito
 }
 
+/// Which part of an email a route looks at.
+public enum MatchField: String, Codable, CaseIterable, Identifiable {
+    case to, from
+
+    public var id: String { rawValue }
+
+    /// "To" / "From", for labels.
+    public var title: String { self == .to ? "To" : "From" }
+
+    /// Reads naturally in "Emails ___ anyone at acme.com".
+    public var phrase: String { self == .to ? "sent to" : "received from" }
+}
+
 public struct Route: Codable, Equatable, Identifiable {
     /// "company.com" (also matches subdomains) or a full address "jane@gmail.com" for one person.
     public var domain: String
+    /// Whether the rule looks at who the email was sent to, or who it came from.
+    public var matchOn: MatchField
     public var kind: DestinationKind
     /// Chat title (kind .chat) or project name (kind .project).
     public var name: String?
     /// A claude.ai or claude:// link to the chat or project. Preferred over the name when present.
     public var url: String?
+    /// Standing instructions added to the prompt whenever this route is used, for example
+    /// "Always reply formally, in Dutch."
+    public var instructions: String?
 
-    public var id: String { domain }
+    /// A From rule and a To rule for the same domain are different routes.
+    public var id: String { "\(matchOn.rawValue):\(domain)" }
 
-    public init(domain: String, kind: DestinationKind = .newChat, name: String? = nil, url: String? = nil) {
+    public init(
+        domain: String, matchOn: MatchField = .to, kind: DestinationKind = .newChat,
+        name: String? = nil, url: String? = nil, instructions: String? = nil
+    ) {
         self.domain = domain
+        self.matchOn = matchOn
         self.kind = kind
         self.name = name
         self.url = url
+        self.instructions = instructions
     }
 
     private enum CodingKeys: String, CodingKey {
-        case domain, kind, name, url
+        case domain, matchOn, kind, name, url, instructions
         // Written by earlier versions, which routed on full addresses.
         case address, chatTitle, chatURL
     }
@@ -53,8 +77,10 @@ public struct Route: Codable, Equatable, Identifiable {
         let legacyURL = try c.decodeIfPresent(String.self, forKey: .chatURL)
         domain = try c.decodeIfPresent(String.self, forKey: .domain)
             ?? c.decodeIfPresent(String.self, forKey: .address) ?? ""
+        matchOn = try c.decodeIfPresent(MatchField.self, forKey: .matchOn) ?? .to
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? legacyTitle
         url = try c.decodeIfPresent(String.self, forKey: .url) ?? legacyURL
+        instructions = try c.decodeIfPresent(String.self, forKey: .instructions)
         kind = try c.decodeIfPresent(DestinationKind.self, forKey: .kind)
             ?? ((legacyTitle ?? legacyURL) != nil ? .chat : .newChat)
     }
@@ -62,9 +88,11 @@ public struct Route: Codable, Equatable, Identifiable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(domain, forKey: .domain)
+        try c.encode(matchOn, forKey: .matchOn)
         try c.encode(kind, forKey: .kind)
         try c.encodeIfPresent(name, forKey: .name)
         try c.encodeIfPresent(url, forKey: .url)
+        try c.encodeIfPresent(instructions, forKey: .instructions)
     }
 
     /// True when the rule names one address rather than a whole domain.
@@ -252,11 +280,21 @@ public struct Config: Codable, Equatable {
         try encoder.encode(self).write(to: url, options: .atomic)
     }
 
-    /// Adds a route, replacing any existing one for the same domain.
+    /// Swaps an edited route into the old one's place, because list order decides which rule wins.
+    public mutating func replace(_ old: Route, with edited: Route) {
+        var edited = edited
+        edited.domain = Router.normalizeRule(edited.domain)
+        guard routes.contains(where: { $0.id == old.id }) else { return upsert(edited) }
+        // Editing a route into another one's field and domain replaces that other route.
+        routes.removeAll { $0.id == edited.id && $0.id != old.id }
+        if let index = routes.firstIndex(where: { $0.id == old.id }) { routes[index] = edited }
+    }
+
+    /// Adds a route, replacing any existing one for the same field and domain.
     public mutating func upsert(_ route: Route) {
         var route = route
         route.domain = Router.normalizeRule(route.domain)
-        routes.removeAll { Router.normalizeRule($0.domain) == route.domain }
+        routes.removeAll { $0.matchOn == route.matchOn && Router.normalizeRule($0.domain) == route.domain }
         routes.append(route)
     }
 }
