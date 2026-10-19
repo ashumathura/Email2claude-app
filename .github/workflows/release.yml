@@ -74,9 +74,9 @@ jobs:
           # Legacy JWT keys also go in Authorization; newer sb_secret_ keys must not.
           AUTH=()
           case "$SERVICE_KEY" in eyJ*) AUTH=(-H "Authorization: Bearer $SERVICE_KEY") ;; esac
-          FILE=dist/eMail-to-Claude.dmg
+          FILE=dist/MailtoChat.dmg
           SHA=$(shasum -a 256 "$FILE" | cut -d' ' -f1)
-          OBJECT="$VERSION/eMail-to-Claude.dmg"
+          OBJECT="$VERSION/MailtoChat.dmg"
           curl -fsS -X POST "$SUPABASE_URL/storage/v1/object/releases/$OBJECT" \
             -H "apikey: $SERVICE_KEY" "${AUTH[@]}" \
             -H "Content-Type: application/x-apple-diskimage" -H "x-upsert: true" \
@@ -91,5 +91,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: eMail-to-Claude-${{ env.VERSION }}
-          path: dist/eMail-to-Claude.dmg
+          name: MailtoChat-${{ env.VERSION }}
+          path: dist/MailtoChat.dmg

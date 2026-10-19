@@ -43,5 +43,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: eMail-to-Claude-dmg
-          path: dist/eMail-to-Claude.dmg
+          name: MailtoChat-dmg
+          path: dist/MailtoChat.dmg

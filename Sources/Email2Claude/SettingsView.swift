@@ -546,7 +546,7 @@ private struct ActivityTab: View {
                 try await ClaudeBridge.reveal(entry.destination.target)
             } catch {
                 let panel = NSAlert()
-                panel.messageText = "eMail to Claude"
+                panel.messageText = "MailtoChat"
                 panel.informativeText = error.localizedDescription
                 panel.runModal()
             }
@@ -607,7 +607,7 @@ private struct GeneralTab: View {
             } header: {
                 Text("Permissions")
             } footer: {
-                Text("Accessibility lets eMail to Claude read Claude's chat list and paste into it.")
+                Text("Accessibility lets MailtoChat read Claude's chat list and paste into it.")
             }
         }
         .formStyle(.grouped)
@@ -765,7 +765,7 @@ final class SettingsWindowController: NSWindowController {
     init(store: ConfigStore, activity: ActivityStore, updates: UpdateManager) {
         let view = SettingsView(store: store, activity: activity, updates: updates)
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
-        window.title = "eMail to Claude Settings"
+        window.title = "MailtoChat Settings"
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
         super.init(window: window)

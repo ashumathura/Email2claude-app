@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds "dist/eMail to Claude.app" and dist/eMail-to-Claude.dmg for Apple Silicon.
+# Builds "dist/MailtoChat.app" and dist/MailtoChat.dmg for Apple Silicon.
 #
 # Optional environment (all three groups needed for a notarized build):
 #   SIGN_IDENTITY   "Developer ID Application: Name (TEAMID)"; unset = ad-hoc signing
@@ -9,11 +9,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 EXECUTABLE=Email2Claude
-DISPLAY_NAME="eMail to Claude"
+DISPLAY_NAME="MailtoChat"
 VERSION=${VERSION:-0.1.0}
 IDENTITY=${SIGN_IDENTITY:--}
 APP="dist/$DISPLAY_NAME.app"
-DMG="dist/eMail-to-Claude.dmg"
+DMG="dist/MailtoChat.dmg"
 
 sign() {
     if [ "$IDENTITY" = "-" ]; then

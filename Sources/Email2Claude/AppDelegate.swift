@@ -41,7 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updates.openSettings = { [weak self] in self?.showSettings() }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = Self.menuBarIcon()
-        statusItem.button?.toolTip = "eMail to Claude"
+        statusItem.button?.toolTip = "MailtoChat"
         buildMenu()
         // Rebuild the menu when action names change. @Published fires before the value is set,
         // so hop to the next main-queue turn to see the new config.
@@ -79,11 +79,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             image.isTemplate = true
             return image
         }
-        return NSImage(systemSymbolName: "envelope.arrow.triangle.branch", accessibilityDescription: "eMail to Claude")
+        return NSImage(systemSymbolName: "envelope.arrow.triangle.branch", accessibilityDescription: "MailtoChat")
     }
 
     private func icon(_ symbol: String) -> NSImage? {
-        NSImage(systemSymbolName: symbol, accessibilityDescription: "eMail to Claude")
+        NSImage(systemSymbolName: symbol, accessibilityDescription: "MailtoChat")
     }
 
     private func registerHotKeys() {
@@ -126,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settings = menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit eMail to Claude", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit MailtoChat", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
     }
 
@@ -186,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.write("\(action.rawValue): done in \(Log.seconds(since: start))")
             } catch {
                 NSSound.beep()
-                alert("eMail to Claude", error.localizedDescription)
+                alert("MailtoChat", error.localizedDescription)
             }
         }
     }

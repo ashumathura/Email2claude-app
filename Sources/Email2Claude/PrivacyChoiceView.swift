@@ -110,7 +110,7 @@ struct PrivacyChoiceView: View {
         HStack(alignment: .top, spacing: 14) {
             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 56, height: 56)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Help improve eMail to Claude?").font(.title2.weight(.semibold))
+                Text("Help improve MailtoChat?").font(.title2.weight(.semibold))
                 Text("The app checks for updates and your license about once a week. Choose what else, if anything, you're happy to share.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -149,7 +149,7 @@ enum PrivacyChoice {
         }
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.styleMask = [.titled]
-        window.title = "eMail to Claude"
+        window.title = "MailtoChat"
         window.isReleasedWhenClosed = false
         window.level = .floating
         window.center()

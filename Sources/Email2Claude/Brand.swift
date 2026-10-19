@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// eMail to Claude brand colors. See BRAND.md for usage guidance.
+/// MailtoChat brand colors. See BRAND.md for usage guidance.
 enum Brand {
     static let navy = Color(hex: 0x0D47A1)       // primary; app icon background
     static let skyBlue = Color(hex: 0x42A5F5)    // active / accent on dark surfaces
