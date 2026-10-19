@@ -13,11 +13,14 @@ public struct Email: Equatable {
     public var messageID: String
     /// The temporary folder holding `attachmentPaths`; removed once the email has been delivered.
     public var attachmentFolder: URL?
+    /// The email addresses of the Mail account the message sits in. Tells mail the user sent
+    /// (the sender is one of these) from mail the user received.
+    public var accountAddresses: [String]
 
     public init(
         sender: String, subject: String, date: String,
         to: [String], cc: [String], body: String, attachmentPaths: [String], messageID: String = "",
-        attachmentFolder: URL? = nil
+        attachmentFolder: URL? = nil, accountAddresses: [String] = []
     ) {
         self.sender = sender
         self.subject = subject
@@ -28,6 +31,7 @@ public struct Email: Equatable {
         self.attachmentPaths = attachmentPaths
         self.messageID = messageID
         self.attachmentFolder = attachmentFolder
+        self.accountAddresses = accountAddresses
     }
 
     /// The text pasted into Claude.

@@ -21,8 +21,8 @@ extension DestinationKind {
     }
 }
 
-/// Maps who an email was sent to (a whole domain, or one address) onto a Claude destination.
-/// Used from Settings and from the prompt shown when an email has no route yet.
+/// Maps who an email was sent to, or came from (a whole domain, or one address), onto a Claude
+/// destination. Used from Settings and from the prompt shown when an email has no route yet.
 struct RouteEditorView: View {
     enum MatchType: String, CaseIterable, Identifiable {
         case domain, address
@@ -31,47 +31,65 @@ struct RouteEditorView: View {
 
     let title: String
     let subtitle: String
-    /// The address that triggered the prompt. Prefills the field when switching to "One email address".
-    let suggestedAddress: String?
+    /// The addresses in the email that triggered the prompt. They prefill the field when the
+    /// user switches between To and From, or between a domain and one address.
+    let suggestions: Router.RouteSuggestion?
     let offersOnce: Bool
+    /// The prompt that the preview shows the standing instructions being added to.
+    let previewPrompt: String
     let loadChats: () -> [String]
     let onSave: (Route) -> Void
     let onOnce: ((Route) -> Void)?
     let onNeverAsk: (() -> Void)?
     let onCancel: () -> Void
 
+    @State private var field: MatchField
     @State private var matchType: MatchType
     @State private var matchText: String
+    @State private var lastSuggested: String?
     @State private var kind: DestinationKind
     @State private var name: String
     @State private var url: String
+    @State private var instructions: String
     @State private var chats: [String]
     @State private var neverAsk = false
 
     init(
-        title: String, subtitle: String, initial: Route, suggestedAddress: String? = nil, offersOnce: Bool,
+        title: String, subtitle: String, initial: Route, suggestions: Router.RouteSuggestion? = nil,
+        offersOnce: Bool, previewPrompt: String = Action.reply.defaultInstruction,
         loadChats: @escaping () -> [String],
         onSave: @escaping (Route) -> Void, onOnce: ((Route) -> Void)? = nil,
         onNeverAsk: (() -> Void)? = nil, onCancel: @escaping () -> Void
     ) {
         self.title = title
         self.subtitle = subtitle
-        self.suggestedAddress = suggestedAddress
+        self.suggestions = suggestions
         self.offersOnce = offersOnce
+        self.previewPrompt = previewPrompt
         self.loadChats = loadChats
         self.onSave = onSave
         self.onOnce = onOnce
         self.onNeverAsk = onNeverAsk
         self.onCancel = onCancel
-        _matchType = State(initialValue: initial.isAddressRule ? .address : .domain)
-        _matchText = State(initialValue: Router.normalizeRule(initial.domain))
+        let type: MatchType = initial.isAddressRule ? .address : .domain
+        let text = Router.normalizeRule(initial.domain)
+        _field = State(initialValue: initial.matchOn)
+        _matchType = State(initialValue: type)
+        _matchText = State(initialValue: text)
+        _lastSuggested = State(initialValue: Self.suggestedText(suggestions, initial.matchOn, type))
         _kind = State(initialValue: initial.kind)
         _name = State(initialValue: initial.name ?? "")
         _url = State(initialValue: initial.url ?? "")
+        _instructions = State(initialValue: initial.instructions ?? "")
         _chats = State(initialValue: loadChats())
     }
 
     // MARK: Derived values
+
+    private static func suggestedText(_ suggestions: Router.RouteSuggestion?, _ field: MatchField, _ type: MatchType) -> String? {
+        guard let address = suggestions?.address(for: field) else { return nil }
+        return type == .address ? address : Router.domain(of: address)
+    }
 
     private var ruleValue: String { Router.normalizeRule(matchText) }
 
@@ -92,11 +110,13 @@ struct RouteEditorView: View {
     private var draft: Route {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         let trimmedURL = url.trimmingCharacters(in: .whitespaces)
+        let trimmedInstructions = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
         let usesDetails = kind == .chat || kind == .project
         return Route(
-            domain: ruleValue, kind: kind,
+            domain: ruleValue, matchOn: field, kind: kind,
             name: usesDetails && !trimmedName.isEmpty ? trimmedName : nil,
-            url: usesDetails && !trimmedURL.isEmpty ? trimmedURL : nil)
+            url: usesDetails && !trimmedURL.isEmpty ? trimmedURL : nil,
+            instructions: trimmedInstructions.isEmpty ? nil : trimmedInstructions)
     }
 
     private var linkIsValid: Bool {
@@ -124,6 +144,29 @@ struct RouteEditorView: View {
         }
     }
 
+    /// Exactly what Claude would receive for a made-up email, with the standing instructions in place.
+    private var preview: String {
+        let sample = Email(
+            sender: "Anna de Vries <anna@example.com>", subject: "Question about the quote", date: "Mon, 5 May 2026",
+            to: ["you@example.com"], cc: [], body: "(the text of the email)", attachmentPaths: [])
+        let prompt = PromptBuilder.compose(actionPrompt: previewPrompt, routeInstructions: draft.instructions)
+        return sample.prompt(instruction: prompt)
+    }
+
+    /// When the field or match type changes, move a prefilled value along with it, but never
+    /// overwrite something the user typed.
+    private func refreshText() {
+        let new = Self.suggestedText(suggestions, field, matchType)
+        if matchText.isEmpty || matchText == lastSuggested {
+            matchText = new ?? ""
+        } else if matchType == .domain, matchText.contains("@") {
+            matchText = Router.domain(of: matchText) ?? ""
+        } else if matchType == .address, !matchText.contains("@") {
+            matchText = new ?? ""
+        }
+        lastSuggested = new
+    }
+
     // MARK: Body
 
     var body: some View {
@@ -131,6 +174,13 @@ struct RouteEditorView: View {
             header
             Form {
                 Section {
+                    Picker("Email field", selection: $field) {
+                        ForEach(MatchField.allCases) { option in
+                            Text(option == .to ? "Sent to (To)" : "Received from (From)").tag(option)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
                     Picker("Match", selection: $matchType) {
                         Text("Anyone at a domain").tag(MatchType.domain)
                         Text("One email address").tag(MatchType.address)
@@ -144,11 +194,14 @@ struct RouteEditorView: View {
                         Text(ruleError).font(.caption).foregroundStyle(.red)
                     }
                 } header: {
-                    Text("When an email is sent to…")
+                    Text("When an email is…")
                 } footer: {
-                    Text(matchType == .domain
-                         ? "Matches everyone at this domain, so mail to you or to any colleague goes to the same place. Subdomains match too."
-                         : "Matches only this exact address. It takes priority over a domain route.")
+                    Text((field == .to
+                          ? "To looks at who the email was sent to. "
+                          : "From looks at who the email came from, which is what you want for mail you receive. ")
+                         + (matchType == .domain
+                            ? "A domain covers everyone there, subdomains too."
+                            : "One address takes priority over a domain rule. To cover both directions with a client, add one From route and one To route."))
                 }
                 .disabled(neverAsk)
 
@@ -166,9 +219,26 @@ struct RouteEditorView: View {
                 }
                 .disabled(neverAsk)
 
+                Section {
+                    TextEditor(text: $instructions)
+                        .font(.body)
+                        .frame(minHeight: 60)
+                    DisclosureGroup("Preview what Claude receives") {
+                        Text(preview)
+                            .font(.system(.caption, design: .monospaced))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                } header: {
+                    Text("Standing instructions (optional)")
+                } footer: {
+                    Text("Added to the prompt every time this route is used, after the action's own prompt, for example “Always reply formally, in Dutch.” Actions that only paste the email aren't affected.")
+                }
+                .disabled(neverAsk)
+
                 if !neverAsk {
                     Section {
-                        Text("Emails sent to **\(whoPhrase)** go to: **\(draft.destinationDescription)**")
+                        Text("Emails **\(field.phrase)** **\(whoPhrase)** go to: **\(draft.destinationDescription)**")
                     } header: {
                         Text("Result")
                     }
@@ -183,17 +253,12 @@ struct RouteEditorView: View {
                 }
             }
             .formStyle(.grouped)
-            .onChange(of: matchType) { newValue in
-                switch newValue {
-                case .address where !matchText.contains("@"): matchText = suggestedAddress ?? ""
-                case .domain where matchText.contains("@"): matchText = Router.domain(of: matchText) ?? ""
-                default: break
-                }
-            }
+            .onChange(of: matchType) { _ in refreshText() }
+            .onChange(of: field) { _ in refreshText() }
 
             footer
         }
-        .frame(width: 540, height: min(640, (NSScreen.main?.visibleFrame.height ?? 800) - 60))
+        .frame(width: 560, height: min(740, (NSScreen.main?.visibleFrame.height ?? 800) - 60))
         .tint(Brand.accent)
     }
 

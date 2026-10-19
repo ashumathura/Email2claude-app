@@ -31,27 +31,90 @@ public enum Router {
         return domain == rule || domain.hasSuffix("." + rule)
     }
 
-    /// The route for this email. Looks only at the To recipients, in order; a rule for a full
-    /// address beats a domain rule, so one person at a shared domain (gmail.com) can be split out.
-    public static func route(for email: Email, config: Config) -> Route? {
-        let addresses = email.to.map(normalize)
-        for address in addresses {
-            if let route = config.routes.first(where: { $0.isAddressRule && matches(rule: $0.domain, address: address) }) {
-                return route
-            }
+    // MARK: Matching
+
+    /// The route that won for an email, and the address in the email that it matched.
+    public struct RouteMatch: Equatable {
+        public let route: Route
+        public let address: String
+    }
+
+    /// The addresses a route looks at: the To recipients, or the sender.
+    private static func candidates(of email: Email, for field: MatchField) -> [String] {
+        switch field {
+        case .to: return email.to.map(normalize)
+        case .from: return [normalize(email.sender)].filter { $0.contains("@") }
         }
-        for address in addresses {
-            if let route = config.routes.first(where: { matches(rule: $0.domain, address: address) }) {
-                return route
+    }
+
+    /// Finds the route for an email. A rule for a full address beats a domain rule, so one person at a
+    /// shared domain (gmail.com) can be split out. Among rules of the same kind, the one higher in the
+    /// list wins. A To rule looks at the To recipients; a From rule looks at the sender.
+    public static func match(for email: Email, config: Config) -> RouteMatch? {
+        for wantAddressRules in [true, false] {
+            for route in config.routes where route.isAddressRule == wantAddressRules {
+                if let hit = candidates(of: email, for: route.matchOn).first(where: { matches(rule: route.domain, address: $0) }) {
+                    return RouteMatch(route: route, address: hit)
+                }
             }
         }
         return nil
     }
 
-    /// The first To address, when no route covers any To recipient. This is what the app asks about.
-    public static func unknownAddress(for email: Email, config: Config) -> String? {
-        guard route(for: email, config: config) == nil else { return nil }
-        return email.to.first.map(normalize)
+    public static func route(for email: Email, config: Config) -> Route? {
+        match(for: email, config: config)?.route
+    }
+
+    /// True when two domain rules on the same field can match the same address, as acme.com and
+    /// mail.acme.com do. The one higher in the list wins. Full-address rules beat domain rules on
+    /// purpose, so a domain rule and an address rule are not an overlap.
+    public static func overlaps(_ a: Route, _ b: Route) -> Bool {
+        guard a.id != b.id, a.matchOn == b.matchOn, !a.isAddressRule, !b.isAddressRule else { return false }
+        let x = normalizeRule(a.domain), y = normalizeRule(b.domain)
+        guard !x.isEmpty, !y.isEmpty else { return false }
+        return x == y || x.hasSuffix("." + y) || y.hasSuffix("." + x)
+    }
+
+    // MARK: Unknown senders
+
+    /// What to offer when no route matches: the sender for mail the user received, the first
+    /// recipient for mail the user sent.
+    public struct RouteSuggestion: Equatable {
+        public var field: MatchField
+        public var fromAddress: String?
+        public var toAddress: String?
+
+        public func address(for field: MatchField) -> String? {
+            field == .from ? fromAddress : toAddress
+        }
+    }
+
+    public static func suggestion(for email: Email, config: Config) -> RouteSuggestion? {
+        guard match(for: email, config: config) == nil else { return nil }
+        let from = candidates(of: email, for: .from).first
+        let to = candidates(of: email, for: .to).first
+        guard from != nil || to != nil else { return nil }
+
+        // Mail that the user sent has one of the account's own addresses as sender. If that can't
+        // be told, keep the long-standing default of looking at who it was sent to.
+        let own = Set(email.accountAddresses.map(normalize))
+        var field: MatchField = own.isEmpty || from.map(own.contains) == true ? .to : .from
+        if field == .to && to == nil { field = .from }
+        if field == .from && from == nil { field = .to }
+        return RouteSuggestion(field: field, fromAddress: from, toAddress: to)
+    }
+}
+
+/// Puts a route's standing instructions into the prompt.
+public enum PromptBuilder {
+    /// The action's prompt, then the route's instructions, introduced by a label. Routes without
+    /// instructions leave the prompt exactly as it was.
+    public static func compose(actionPrompt: String, routeInstructions: String?) -> String {
+        let extra = routeInstructions?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !extra.isEmpty else { return actionPrompt }
+        let block = "Standing instructions for this client:\n" + extra
+        let action = actionPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        return action.isEmpty ? block : action + "\n\n" + block
     }
 }
 

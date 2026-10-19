@@ -24,14 +24,18 @@ explains the effect of each mode.
 
 ## Routing
 
-A route sends an email to a place in Claude based on **who it was sent to** (the To field):
+A route sends an email to a place in Claude. Each route looks at **one field**, chosen when it is created:
 
-- **An email domain** — `company.com` covers you and every colleague there (subdomains too).
-- **A full address** — `me@company.com` for one person; it wins over a domain route.
+- **To**: mail you send. `company.com` covers everyone at that domain (subdomains too), or one address like `anna@company.com`.
+- **From**: mail you receive, from a domain or one address. For a client you write to and hear from, add one From route and one To route pointing at the same chat.
 
-Each route sends to one of: an **existing chat**, a **new chat in a project**, a **new chat**, or an
-**incognito chat**. If an email's To has no route, a window asks where it should go (save it, use it once,
-or "don't ask again, always start a new chat" — reversible in Settings → Routes).
+A full address beats a domain. Otherwise the route higher in the list wins; drag to reorder, and use **Test your routes** to see which one applies. Overlapping domain rules (`acme.com` and `mail.acme.com`) are flagged.
+Each route sends to an **existing chat**, a **new chat in a project**, a **new chat**, or an **incognito chat**,
+and can carry **standing instructions** (for example "Always reply formally, in Dutch.") that are added to the prompt after the
+action's own prompt. Actions set to paste only add no prompt, so they are not affected. The route editor previews exactly what Claude receives.
+
+If an email matches no route, a window asks where it should go (save it, use it once, or "don't ask again, always
+start a new chat", reversible in Settings → Routes). For mail you received it offers the sender; for mail you sent, the recipient.
 
 ## Activity log
 

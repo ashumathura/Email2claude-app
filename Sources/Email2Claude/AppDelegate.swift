@@ -160,7 +160,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Paste-only sends the email alone; otherwise the prompt goes on top and, with
                 // auto-send on, the message is submitted so Claude acts on it straight away.
                 let mode = config.mode(for: action)
-                let instruction = mode == .prompt ? config.instruction(for: action) : ""
+                // A route's standing instructions go after the action's prompt. Paste-only actions add
+                // no prompt, so the route's instructions don't apply to them either.
+                let instruction = mode == .prompt
+                    ? PromptBuilder.compose(
+                        actionPrompt: config.instruction(for: action),
+                        routeInstructions: resolved.destination.instructions)
+                    : ""
                 try await ClaudeBridge.deliver(
                     email, to: resolved.target, instruction: instruction,
                     sendAutomatically: mode == .prompt && config.autoSend, config: config)
@@ -186,11 +192,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let route = Router.route(for: email, config: store.config) {
             return Resolved(target: route.target, destination: route, rule: route.domain)
         }
-        guard let address = Router.unknownAddress(for: email, config: store.config),
+        guard let suggestion = Router.suggestion(for: email, config: store.config),
               store.config.askForUnknownRoutes
         else { return newChat }
 
-        switch RouteChooser.ask(address: address) {
+        switch RouteChooser.ask(suggestion: suggestion, previewPrompt: store.config.instruction(for: .reply)) {
         case .save(let route):
             store.config.upsert(route)
             return Resolved(target: route.target, destination: route, rule: Router.normalizeRule(route.domain))

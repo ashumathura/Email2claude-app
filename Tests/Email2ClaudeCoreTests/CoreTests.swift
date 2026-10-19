@@ -43,10 +43,132 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(Router.route(for: email(to: ["z@other.com"], cc: ["dev@acme.com"]), config: config))
     }
 
-    func testUnknownAddress() {
-        let config = Config(routes: [Route(domain: "known.com")])
-        XCTAssertEqual(Router.unknownAddress(for: email(to: ["New <New@X.com>", "other@x.com"]), config: config), "new@x.com")
-        XCTAssertNil(Router.unknownAddress(for: email(to: ["a@known.com"]), config: config))
+    // MARK: From routes and precedence
+
+    private func received(from sender: String, to: [String] = ["me@mine.com"], account: [String] = ["me@mine.com"]) -> Email {
+        Email(sender: sender, subject: "Hi", date: "today", to: to, cc: [], body: "Body",
+              attachmentPaths: [], accountAddresses: account)
+    }
+
+    func testFromRouteMatchesSenderWhateverToSays() {
+        let config = Config(routes: [Route(domain: "acme.com", matchOn: .from, kind: .project, name: "Acme")])
+        XCTAssertEqual(Router.route(for: received(from: "Jane <jane@acme.com>"), config: config)?.name, "Acme")
+        XCTAssertEqual(Router.route(for: received(from: "x@mail.acme.com"), config: config)?.name, "Acme")
+        XCTAssertNil(Router.route(for: received(from: "jane@other.com"), config: config))
+    }
+
+    func testFromRuleDoesNotLookAtTo() {
+        let config = Config(routes: [Route(domain: "acme.com", matchOn: .from, kind: .newChat)])
+        XCTAssertNil(Router.route(for: received(from: "me@mine.com", to: ["jane@acme.com"]), config: config))
+    }
+
+    func testToRuleDoesNotLookAtFrom() {
+        let config = Config(routes: [Route(domain: "acme.com", matchOn: .to, kind: .newChat)])
+        XCTAssertNil(Router.route(for: received(from: "jane@acme.com"), config: config))
+    }
+
+    func testOneClientNeedsOneRulePerDirection() {
+        let config = Config(routes: [
+            Route(domain: "acme.com", matchOn: .from, kind: .chat, name: "Acme"),
+            Route(domain: "acme.com", matchOn: .to, kind: .chat, name: "Acme"),
+        ])
+        XCTAssertNotNil(Router.route(for: received(from: "jane@acme.com"), config: config))
+        XCTAssertNotNil(Router.route(for: received(from: "me@mine.com", to: ["jane@acme.com"]), config: config))
+    }
+
+    func testAddressRuleBeatsDomainRuleAcrossFields() {
+        let config = Config(routes: [
+            Route(domain: "acme.com", matchOn: .from, kind: .chat, name: "Everyone"),
+            Route(domain: "jane@acme.com", matchOn: .to, kind: .chat, name: "Jane"),
+        ])
+        let email = received(from: "bob@acme.com", to: ["jane@acme.com"])
+        XCTAssertEqual(Router.route(for: email, config: config)?.name, "Jane")
+    }
+
+    func testListOrderDecidesBetweenEqualRules() {
+        let mail = received(from: "jane@mail.acme.com")
+        var config = Config(routes: [
+            Route(domain: "mail.acme.com", matchOn: .from, kind: .chat, name: "Specific"),
+            Route(domain: "acme.com", matchOn: .from, kind: .chat, name: "General"),
+        ])
+        XCTAssertEqual(Router.route(for: mail, config: config)?.name, "Specific")
+        config.routes.reverse()
+        XCTAssertEqual(Router.route(for: mail, config: config)?.name, "General", "reordering changes the winner")
+    }
+
+    func testMatchReportsTheAddressThatMatched() {
+        let config = Config(routes: [Route(domain: "acme.com", matchOn: .from, kind: .newChat)])
+        let hit = Router.match(for: received(from: "Jane <Jane@Acme.com>"), config: config)
+        XCTAssertEqual(hit?.address, "jane@acme.com")
+        XCTAssertEqual(hit?.route.matchOn, .from)
+    }
+
+    func testOverlapsFlagsNestedDomainsOnTheSameField() {
+        let a = Route(domain: "acme.com", matchOn: .from), b = Route(domain: "mail.acme.com", matchOn: .from)
+        XCTAssertTrue(Router.overlaps(a, b))
+        XCTAssertFalse(Router.overlaps(a, Route(domain: "mail.acme.com", matchOn: .to)), "different fields")
+        XCTAssertFalse(Router.overlaps(a, Route(domain: "jane@acme.com", matchOn: .from)), "an address rule beats a domain on purpose")
+        XCTAssertFalse(Router.overlaps(a, Route(domain: "other.com", matchOn: .from)))
+        XCTAssertFalse(Router.overlaps(a, a))
+    }
+
+    func testSuggestionOffersSenderForReceivedMail() {
+        let suggestion = Router.suggestion(for: received(from: "Jane <jane@acme.com>"), config: Config())
+        XCTAssertEqual(suggestion?.field, .from)
+        XCTAssertEqual(suggestion?.fromAddress, "jane@acme.com")
+        XCTAssertEqual(suggestion?.toAddress, "me@mine.com")
+    }
+
+    func testSuggestionOffersRecipientForSentMail() {
+        let sent = received(from: "Me <me@mine.com>", to: ["jane@acme.com"])
+        XCTAssertEqual(Router.suggestion(for: sent, config: Config())?.field, .to)
+    }
+
+    func testSuggestionDefaultsToToWhenTheAccountIsUnknown() {
+        let unknown = received(from: "jane@acme.com", account: [])
+        XCTAssertEqual(Router.suggestion(for: unknown, config: Config())?.field, .to)
+        let noRecipient = Email(sender: "jane@acme.com", subject: "", date: "", to: [], cc: [], body: "", attachmentPaths: [])
+        XCTAssertEqual(Router.suggestion(for: noRecipient, config: Config())?.field, .from)
+    }
+
+    func testNoSuggestionWhenARouteMatches() {
+        let config = Config(routes: [Route(domain: "acme.com", matchOn: .from)])
+        XCTAssertNil(Router.suggestion(for: received(from: "jane@acme.com"), config: config))
+    }
+
+    // MARK: Route instructions
+
+    func testInstructionsAreAddedAfterTheActionPrompt() {
+        let text = PromptBuilder.compose(actionPrompt: "Draft a reply.", routeInstructions: "  Reply formally, in Dutch.  ")
+        XCTAssertEqual(text, "Draft a reply.\n\nStanding instructions for this client:\nReply formally, in Dutch.")
+    }
+
+    func testRoutesWithoutInstructionsLeaveThePromptAlone() {
+        XCTAssertEqual(PromptBuilder.compose(actionPrompt: "Draft a reply.", routeInstructions: nil), "Draft a reply.")
+        XCTAssertEqual(PromptBuilder.compose(actionPrompt: "Draft a reply.", routeInstructions: "   "), "Draft a reply.")
+    }
+
+    func testInstructionsWorkWithoutAnActionPrompt() {
+        XCTAssertEqual(PromptBuilder.compose(actionPrompt: "", routeInstructions: "Be brief."),
+                       "Standing instructions for this client:\nBe brief.")
+    }
+
+    func testRouteFieldAndInstructionsSurviveSaving() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("e2c-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        var config = Config()
+        config.upsert(Route(domain: "acme.com", matchOn: .from, kind: .project, name: "Acme", instructions: "Formal Dutch."))
+        try config.save(to: url)
+        let loaded = Config.load(from: url)
+        XCTAssertEqual(loaded.routes.first?.matchOn, .from)
+        XCTAssertEqual(loaded.routes.first?.instructions, "Formal Dutch.")
+    }
+
+    func testRoutesWrittenBeforeFromRoutingAreToRoutes() throws {
+        let json = #"{"routes":[{"domain":"acme.com","kind":"chat","name":"Acme"}]}"#
+        let config = try JSONDecoder().decode(Config.self, from: Data(json.utf8))
+        XCTAssertEqual(config.routes.first?.matchOn, .to)
+        XCTAssertNil(config.routes.first?.instructions)
     }
 
     func testUpsertReplacesSameDomain() {
@@ -54,6 +176,33 @@ final class CoreTests: XCTestCase {
         config.upsert(Route(domain: " @A.com ", kind: .chat, name: "one"))
         config.upsert(Route(domain: "a.com", kind: .incognito))
         XCTAssertEqual(config.routes, [Route(domain: "a.com", kind: .incognito)])
+    }
+
+    func testEditingARouteKeepsItsPlaceInTheList() {
+        var config = Config(routes: [Route(domain: "a.com"), Route(domain: "b.com"), Route(domain: "c.com")])
+        config.replace(Route(domain: "b.com"), with: Route(domain: "B2.com", matchOn: .from, kind: .incognito))
+        XCTAssertEqual(config.routes.map(\.domain), ["a.com", "b2.com", "c.com"])
+        XCTAssertEqual(config.routes[1].matchOn, .from)
+    }
+
+    func testEditingARouteOntoAnotherReplacesThatOne() {
+        var config = Config(routes: [Route(domain: "a.com"), Route(domain: "b.com"), Route(domain: "c.com")])
+        config.replace(Route(domain: "c.com"), with: Route(domain: "a.com", kind: .incognito))
+        XCTAssertEqual(config.routes.map(\.domain), ["b.com", "a.com"], "the edited route keeps its own place")
+        XCTAssertEqual(config.routes.count, 2)
+        XCTAssertEqual(config.routes.filter { $0.domain == "a.com" }.count, 1)
+        XCTAssertEqual(config.routes.first { $0.domain == "a.com" }?.kind, .incognito)
+    }
+
+    func testUpsertKeepsFromAndToRoutesApart() {
+        var config = Config()
+        config.upsert(Route(domain: "a.com", matchOn: .to, kind: .chat, name: "to"))
+        config.upsert(Route(domain: "a.com", matchOn: .from, kind: .chat, name: "from"))
+        XCTAssertEqual(config.routes.count, 2)
+        config.upsert(Route(domain: "A.com", matchOn: .from, kind: .chat, name: "from2"))
+        XCTAssertEqual(config.routes.count, 2)
+        XCTAssertEqual(config.routes.first { $0.matchOn == .from }?.name, "from2")
+        XCTAssertNotEqual(config.routes[0].id, config.routes[1].id)
     }
 
     // MARK: Targets
@@ -256,7 +405,9 @@ final class CoreTests: XCTestCase {
     }
 
     func testActivityRouteText() {
-        XCTAssertEqual(entry(subject: "s").routeText, "acme.com → New chat in project: Acme")
+        XCTAssertEqual(entry(subject: "s").routeText, "To acme.com → New chat in project: Acme")
+        let fromRoute = entry(subject: "s", destination: Route(domain: "acme.com", matchOn: .from, kind: .newChat))
+        XCTAssertEqual(fromRoute.routeText, "From acme.com → New chat each time")
         let none = entry(subject: "s", rule: "", destination: Route(domain: "", kind: .newChat))
         XCTAssertEqual(none.routeText, "No route · New chat each time")
         XCTAssertTrue(entry(subject: "s").canOpenChat)

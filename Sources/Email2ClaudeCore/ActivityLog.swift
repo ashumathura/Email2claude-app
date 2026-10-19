@@ -50,7 +50,7 @@ public struct ActivityEntry: Codable, Equatable, Identifiable {
     public var routeText: String {
         rule.isEmpty
             ? "No route · \(destination.destinationDescription)"
-            : "\(rule) → \(destination.destinationDescription)"
+            : "\(destination.matchOn.title) \(rule) → \(destination.destinationDescription)"
     }
 
     /// New and incognito chats have nothing to go back to.
