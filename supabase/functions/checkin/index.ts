@@ -17,6 +17,8 @@ const supabase = createClient(
   { auth: { persistSession: false } },
 );
 
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const KEY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VERSION = /^\d+(\.\d+){0,3}$/;
 const SIGNED_URL_SECONDS = 900;
@@ -34,6 +36,7 @@ interface Body {
   macos_version?: unknown;
   os_language?: unknown;
   license_key?: unknown;
+  email?: unknown;
 }
 
 const json = (body: unknown, status = 200) =>
@@ -93,6 +96,17 @@ async function lookupGeo(ip: string | null, req: Request): Promise<{ country: st
   };
 }
 
+// EMC-XXXXX-XXXXX-XXXXX-XXXXX, 100 random bits, no 0/O/1/I (same format as generate_license_key()).
+function newLicenseKey(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(20));
+  let key = "EMC";
+  bytes.forEach((byte, i) => {
+    if (i % 5 === 0) key += "-";
+    key += KEY_ALPHABET[byte % 32];
+  });
+  return key;
+}
+
 async function licenseStatus(rawKey: string | null): Promise<LicenseStatus> {
   const key = rawKey?.toUpperCase() ?? "";
   if (!key) return "missing";
@@ -122,7 +136,54 @@ Deno.serve(async (req) => {
     if (body.action === "erase") {
       const { error } = await supabase.from("installs").delete().eq("device_id", deviceId);
       if (error) throw error;
+      // The email and device link go too; the key itself stays valid.
+      const erasedKey = clip(body.license_key, 64)?.toUpperCase();
+      if (erasedKey) {
+        const { error: licenseError } = await supabase
+          .from("licenses")
+          .update({ email: null, device_id: null })
+          .eq("key", erasedKey)
+          .eq("device_id", deviceId);
+        if (licenseError) throw licenseError;
+      }
       return json({ ok: true });
+    }
+
+    // Issue a free, non-expiring license key for an email address. The key is returned to the app only,
+    // never mailed; an address that already has a key gets it back only on the device that asked first.
+    if (body.action === "register") {
+      const email = clip(body.email, 254)?.toLowerCase() ?? "";
+      if (!EMAIL.test(email)) return json({ error: "bad_email" }, 400);
+
+      const findExisting = async () => {
+        const { data, error } = await supabase
+          .from("licenses")
+          .select("key, status, device_id")
+          .eq("email", email)
+          .maybeSingle();
+        if (error) throw error;
+        return data;
+      };
+      const respondWith = (existing: { key: string; status: string; device_id: string | null }) =>
+        existing.device_id === deviceId && existing.status === "active"
+          ? json({ ok: true, license: "valid", license_key: existing.key })
+          : json({ error: "already_registered" }, 409);
+
+      const existing = await findExisting();
+      if (existing) return respondWith(existing);
+
+      const key = newLicenseKey();
+      const { error: insertError } = await supabase
+        .from("licenses")
+        .insert({ key, email, device_id: deviceId, expires_at: null, note: "self-service" });
+      if (insertError) {
+        if (insertError.code === "23505") {
+          const raced = await findExisting();
+          if (raced) return respondWith(raced);
+        }
+        throw insertError;
+      }
+      return json({ ok: true, license: "valid", license_key: key });
     }
 
     const analytics = body.analytics === true;

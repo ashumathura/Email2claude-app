@@ -12,8 +12,10 @@ enum PrivacyText {
     ]
     static let minimalItems = [
         "A random device ID, and the dates you first and last used the app",
-        "Nothing else: no IP address, location, versions or language are stored",
+        "Nothing else about your device: no IP address, location, versions or language are stored",
     ]
+    /// Shown wherever the user is asked for an email address.
+    static let emailNote = "Your email address is stored with your license key, only to issue and manage your license and to contact you about it. It is never linked to your emails, attachments or prompts. It is stored whether or not you share analytics, and you can have it removed at any time in Settings → License & Privacy → Erase My Data."
     /// The promise that matters most, shown wherever the analytics choice is.
     static let localTitle = "Your emails never leave your Mac"
     static let localBody = "Your emails, attachments and prompts are never sent to the developer or to any server of ours. They go straight from Mail into the Claude app on this Mac, and nowhere else. Once they are in Claude, Claude handles them under its own terms, exactly as if you had pasted them yourself."

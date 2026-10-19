@@ -61,6 +61,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             store.config.analyticsChoice = PrivacyChoice.ask()
             store.config.analyticsChoiceDate = Date()
         }
+        // A free license key needs an email address: ask once, right after the privacy choice.
+        if BackendConfig.isPackagedApp && store.config.licenseKey.isEmpty && !store.config.emailPromptShown {
+            EmailSignup.run(updates: updates)
+            store.config.emailPromptShown = true
+        }
         _ = ClaudeBridge.accessibilityGranted(prompt: true)
         updates.start()
     }

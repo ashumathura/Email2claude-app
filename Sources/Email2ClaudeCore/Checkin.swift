@@ -33,8 +33,9 @@ public struct CheckinRequest: Codable, Equatable {
 
     public var deviceId: String
     public var event: Event
-    /// "erase" deletes everything stored for this device.
+    /// "erase" deletes everything stored for this device; "register" issues a license key for `email`.
     public var action: String?
+    public var email: String?
     public var analytics: Bool
     public var wantsUpdate: Bool
     public var appVersion: String
@@ -43,12 +44,13 @@ public struct CheckinRequest: Codable, Equatable {
     public var licenseKey: String
 
     public init(
-        deviceId: String, event: Event, action: String? = nil, analytics: Bool, wantsUpdate: Bool,
-        appVersion: String, macosVersion: String, osLanguage: String, licenseKey: String
+        deviceId: String, event: Event, action: String? = nil, email: String? = nil, analytics: Bool,
+        wantsUpdate: Bool, appVersion: String, macosVersion: String, osLanguage: String, licenseKey: String
     ) {
         self.deviceId = deviceId
         self.event = event
         self.action = action
+        self.email = email
         self.analytics = analytics
         self.wantsUpdate = wantsUpdate
         self.appVersion = appVersion
@@ -75,9 +77,27 @@ public struct BlockedUpdate: Codable, Equatable {
 
 public struct CheckinResponse: Codable, Equatable {
     public var license: String?
+    /// Only in the answer to a "register" request.
+    public var licenseKey: String?
     public var latestVersion: String?
     public var update: UpdateInfo?
     public var updateBlocked: BlockedUpdate?
+}
+
+/// A light check before sending an address to the server, which validates it again.
+public enum EmailAddress {
+    public static func normalize(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    public static func isPlausible(_ raw: String) -> Bool {
+        let email = normalize(raw)
+        guard email.count <= 254, !email.contains(where: \.isWhitespace) else { return false }
+        let parts = email.split(separator: "@", omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty else { return false }
+        let domain = parts[1].split(separator: ".", omittingEmptySubsequences: false)
+        return domain.count >= 2 && domain.allSatisfy { !$0.isEmpty } && (domain.last?.count ?? 0) >= 2
+    }
 }
 
 public enum Checkin {

@@ -366,6 +366,48 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(plain.license)
     }
 
+    func testEmailAddressCheck() {
+        XCTAssertTrue(EmailAddress.isPlausible("jane@acme.com"))
+        XCTAssertTrue(EmailAddress.isPlausible("  Jane.Doe+news@mail.acme.co.uk "))
+        XCTAssertFalse(EmailAddress.isPlausible(""))
+        XCTAssertFalse(EmailAddress.isPlausible("jane"))
+        XCTAssertFalse(EmailAddress.isPlausible("jane@acme"))
+        XCTAssertFalse(EmailAddress.isPlausible("@acme.com"))
+        XCTAssertFalse(EmailAddress.isPlausible("jane@@acme.com"))
+        XCTAssertFalse(EmailAddress.isPlausible("jane doe@acme.com"))
+        XCTAssertFalse(EmailAddress.isPlausible("jane@acme..com"))
+        XCTAssertFalse(EmailAddress.isPlausible("jane@acme.c"))
+        XCTAssertEqual(EmailAddress.normalize("  Jane@Acme.COM "), "jane@acme.com")
+    }
+
+    func testRegisterRequestAndResponse() throws {
+        var request = CheckinRequest(
+            deviceId: "11111111-1111-1111-1111-111111111111", event: .open, analytics: false,
+            wantsUpdate: false, appVersion: "0.1.3", macosVersion: "14.1", osLanguage: "en", licenseKey: "")
+        request.action = "register"
+        request.email = "jane@acme.com"
+        let object = try JSONSerialization.jsonObject(with: Checkin.encoder.encode(request)) as? [String: Any]
+        XCTAssertEqual(object?["action"] as? String, "register")
+        XCTAssertEqual(object?["email"] as? String, "jane@acme.com")
+
+        let json = #"{"ok":true,"license":"valid","license_key":"EMC-AAAAA-BBBBB-CCCCC-DDDDD"}"#
+        let response = try Checkin.decoder.decode(CheckinResponse.self, from: Data(json.utf8))
+        XCTAssertEqual(response.licenseKey, "EMC-AAAAA-BBBBB-CCCCC-DDDDD")
+    }
+
+    func testLicenseEmailPersistsAndOldConfigsDefault() throws {
+        var config = Config()
+        XCTAssertEqual(config.licenseEmail, "")
+        XCTAssertFalse(config.emailPromptShown)
+        config.licenseEmail = "jane@acme.com"
+        config.emailPromptShown = true
+        let data = try JSONEncoder().encode(config)
+        XCTAssertEqual(try JSONDecoder().decode(Config.self, from: data), config)
+        let old = try JSONDecoder().decode(Config.self, from: Data(#"{"licenseKey":"EMC-1"}"#.utf8))
+        XCTAssertEqual(old.licenseEmail, "")
+        XCTAssertFalse(old.emailPromptShown)
+    }
+
     func testPrivacyAndLicenseSettingsPersist() throws {
         var config = Config()
         XCTAssertEqual(config.analyticsChoice, .unset, "nothing is shared until the user answers")

@@ -155,6 +155,10 @@ public struct Config: Codable, Equatable {
     public var analyticsChoice: AnalyticsChoice
     public var analyticsChoiceDate: Date?
     public var licenseKey: String
+    /// The address the license key was issued to, shown in Settings.
+    public var licenseEmail: String
+    /// The "get your free license key" screen has been shown once at launch.
+    public var emailPromptShown: Bool
     public var lastUpdateCheck: Date?
     /// valid, missing, invalid, revoked or expired, from the last weekly check.
     public var lastLicenseStatus: String?
@@ -169,6 +173,8 @@ public struct Config: Codable, Equatable {
         analyticsChoice: AnalyticsChoice = .unset,
         analyticsChoiceDate: Date? = nil,
         licenseKey: String = "",
+        licenseEmail: String = "",
+        emailPromptShown: Bool = false,
         lastUpdateCheck: Date? = nil,
         lastLicenseStatus: String? = nil
     ) {
@@ -181,13 +187,15 @@ public struct Config: Codable, Equatable {
         self.analyticsChoice = analyticsChoice
         self.analyticsChoiceDate = analyticsChoiceDate
         self.licenseKey = licenseKey
+        self.licenseEmail = licenseEmail
+        self.emailPromptShown = emailPromptShown
         self.lastUpdateCheck = lastUpdateCheck
         self.lastLicenseStatus = lastLicenseStatus
     }
 
     private enum CodingKeys: String, CodingKey {
         case routes, actions, autoSend, askForUnknownRoutes, keepActivityLog, openDelay
-        case analyticsChoice, analyticsChoiceDate, licenseKey, lastUpdateCheck, lastLicenseStatus
+        case analyticsChoice, analyticsChoiceDate, licenseKey, licenseEmail, emailPromptShown, lastUpdateCheck, lastLicenseStatus
         // Written by earlier versions: one reply prompt, then a prompt per action.
         case instruction, instructions
     }
@@ -204,6 +212,8 @@ public struct Config: Codable, Equatable {
         analyticsChoice = try c.decodeIfPresent(AnalyticsChoice.self, forKey: .analyticsChoice) ?? d.analyticsChoice
         analyticsChoiceDate = try c.decodeIfPresent(Date.self, forKey: .analyticsChoiceDate)
         licenseKey = try c.decodeIfPresent(String.self, forKey: .licenseKey) ?? d.licenseKey
+        licenseEmail = try c.decodeIfPresent(String.self, forKey: .licenseEmail) ?? d.licenseEmail
+        emailPromptShown = try c.decodeIfPresent(Bool.self, forKey: .emailPromptShown) ?? d.emailPromptShown
         lastUpdateCheck = try c.decodeIfPresent(Date.self, forKey: .lastUpdateCheck)
         lastLicenseStatus = try c.decodeIfPresent(String.self, forKey: .lastLicenseStatus)
         var legacy = try c.decodeIfPresent([String: String].self, forKey: .instructions) ?? [:]
@@ -228,6 +238,8 @@ public struct Config: Codable, Equatable {
         try c.encode(analyticsChoice, forKey: .analyticsChoice)
         try c.encodeIfPresent(analyticsChoiceDate, forKey: .analyticsChoiceDate)
         try c.encode(licenseKey, forKey: .licenseKey)
+        try c.encode(licenseEmail, forKey: .licenseEmail)
+        try c.encode(emailPromptShown, forKey: .emailPromptShown)
         try c.encodeIfPresent(lastUpdateCheck, forKey: .lastUpdateCheck)
         try c.encodeIfPresent(lastLicenseStatus, forKey: .lastLicenseStatus)
     }

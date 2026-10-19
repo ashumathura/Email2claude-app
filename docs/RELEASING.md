@@ -53,6 +53,14 @@ The first Developer-ID-signed version has to be installed by hand once; from the
 Keys look like `EMC-XXXXX-XXXXX-XXXXX-XXXXX` (100 random bits). They are checked online, once a week,
 when the app asks for updates. A valid key lets the app download updates; the app works without one.
 
+**Self-service (current):** on first launch the app asks for an email address and the `checkin` function's
+`register` action issues a key that never expires (`expires_at` is null), one per address, saved in the app
+automatically. The key is returned to the app only, not emailed. Revoke one with
+`update public.licenses set status = 'revoked' where key = '...';` or set `expires_at` to end it. If someone
+loses their key, look it up by email in `public.licenses` and send it to them yourself.
+
+To issue keys by hand instead:
+
 ```sql
 select public.issue_license('buyer@example.com');        -- a key that never expires
 select public.issue_license('buyer@example.com', 365);   -- valid for a year
