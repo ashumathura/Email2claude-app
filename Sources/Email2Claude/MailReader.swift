@@ -18,21 +18,41 @@ enum MailError: LocalizedError {
 /// Reads the selected message from Mail.app over Apple Events.
 /// The first run triggers the system's Automation permission prompt.
 enum MailReader {
+    private static let folderPrefix = "Email2Claude-"
+
+    /// Removes attachment folders left behind by a crash or quit, once they are an hour old.
+    static func sweepOldAttachmentFolders() {
+        let fm = FileManager.default
+        let cutoff = Date().addingTimeInterval(-3600)
+        let folders = (try? fm.contentsOfDirectory(
+            at: fm.temporaryDirectory, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        for folder in folders where folder.lastPathComponent.hasPrefix(folderPrefix) {
+            let modified = (try? folder.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            if (modified ?? .distantPast) < cutoff { try? fm.removeItem(at: folder) }
+        }
+    }
+
     static func readSelectedEmail() throws -> Email {
         guard NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.mail").first != nil
         else { throw MailError.notRunning }
 
+        // Attachments are saved here for the paste, readable by this user only, then removed.
         let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Email2Claude-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            .appendingPathComponent("\(folderPrefix)\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
 
         let source = script(saveDir: dir.path)
         var errorInfo: NSDictionary?
         guard let result = NSAppleScript(source: source)?.executeAndReturnError(&errorInfo) else {
+            try? FileManager.default.removeItem(at: dir)
             let message = errorInfo?[NSAppleScript.errorMessage] as? String ?? "unknown error"
             throw MailError.script(message)
         }
-        guard result.numberOfItems >= 7 else { throw MailError.noSelection }
+        guard result.numberOfItems >= 7 else {
+            try? FileManager.default.removeItem(at: dir)
+            throw MailError.noSelection
+        }
 
         func text(_ i: Int) -> String { result.atIndex(i)?.stringValue ?? "" }
         func list(_ i: Int) -> [String] {
@@ -41,7 +61,8 @@ enum MailReader {
         }
         return Email(
             sender: text(1), subject: text(2), date: text(3),
-            to: list(4), cc: list(5), body: text(6), attachmentPaths: list(7), messageID: text(8))
+            to: list(4), cc: list(5), body: text(6), attachmentPaths: list(7), messageID: text(8),
+            attachmentFolder: dir)
     }
 
     /// Fetches recipients and attachment lists in single Apple Events instead of looping, and skips

@@ -48,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] _ in self?.buildMenu() }
             .store(in: &observers)
         registerHotKeys()
+        MailReader.sweepOldAttachmentFolders()
         _ = ClaudeBridge.accessibilityGranted(prompt: true)
     }
 
@@ -133,7 +134,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let start = Date()
                 let email = try MailReader.readSelectedEmail()
                 Log.write("\(action.rawValue): read email in \(Log.seconds(since: start)) (\(email.body.count) chars, \(email.attachmentPaths.count) attachments)")
-                guard let resolved = resolveTarget(for: email) else { return }
+                // Claude may still be reading the files after the paste, so removal waits a little.
+                defer { Self.removeAttachmentFolder(of: email, after: .seconds(120)) }
+                guard let resolved = resolveTarget(for: email) else {
+                    Self.removeAttachmentFolder(of: email, after: .zero)
+                    return
+                }
 
                 // Paste-only sends the email alone; otherwise the prompt goes on top and, with
                 // auto-send on, the message is submitted so Claude acts on it straight away.
@@ -179,6 +185,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return newChat
         case .cancel:
             return nil
+        }
+    }
+
+    /// Deletes the temporary attachment files saved for an email.
+    private static func removeAttachmentFolder(of email: Email, after delay: Duration) {
+        guard let folder = email.attachmentFolder else { return }
+        Task.detached {
+            try? await Task.sleep(for: delay)
+            try? FileManager.default.removeItem(at: folder)
         }
     }
 
