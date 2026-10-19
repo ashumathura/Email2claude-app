@@ -125,7 +125,8 @@ enum UpdateInstaller {
         guard AppVersion.isNewer(version, than: BackendConfig.appVersion) else { throw UpdateError.wrongApp("not newer") }
 
         let newTeam = try signingTeam(of: app)
-        guard let currentTeam = try? signingTeam(of: Bundle.main.bundleURL), let currentTeam else {
+        // `try?` flattens the optional: nil here means "unsigned or ad-hoc", whether or not the check threw.
+        guard let currentTeam = try? signingTeam(of: Bundle.main.bundleURL) else {
             throw UpdateError.cannotVerifyPublisher
         }
         guard newTeam == currentTeam else { throw UpdateError.publisherMismatch }

@@ -12,7 +12,7 @@ final class UpdateManager: ObservableObject {
     @Published private(set) var status = ""
 
     private let store: ConfigStore
-    private var timer: Timer?
+    private var recheckLoop: Task<Void, Never>?
     private let interval: TimeInterval = 7 * 24 * 3600
     private let notifiedBlockedKey = "notifiedBlockedVersion"
 
@@ -27,9 +27,12 @@ final class UpdateManager: ObservableObject {
     func start() {
         guard BackendConfig.isPackagedApp else { return }
         Task { await run(event: .open, manual: false) }
-        // The app can stay open for weeks, so re-check whether the weekly check is due.
-        timer = Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.run(event: .updateCheck, manual: false) }
+        // The app can stay open for weeks, so every few hours see whether the weekly check is due.
+        recheckLoop = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(6 * 3600))
+                await self?.run(event: .updateCheck, manual: false)
+            }
         }
     }
 
