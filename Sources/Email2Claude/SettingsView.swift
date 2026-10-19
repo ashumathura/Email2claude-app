@@ -609,6 +609,8 @@ private struct GeneralTab: View {
             } footer: {
                 Text("Accessibility lets MailtoChat read Claude's chat list and paste into it.")
             }
+
+            DonateSection()
         }
         .formStyle(.grouped)
     }

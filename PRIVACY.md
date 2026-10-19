@@ -34,6 +34,8 @@ About once a week, and when it opens, the app contacts a server hosted with Supa
   about it. It is stored whether or not you share analytics, it is never linked to your emails or prompts, and
   the app works without it (you just get no updates). The key does not expire. [Add the legal basis: performance
   of the license agreement, and legitimate interest in managing licenses; state the retention period.]
+- **Donations:** the Support the App menu item and the General tab have a link to a Revolut page. It opens in
+  your browser; the app itself sends nothing to Revolut and does not record whether you used it.
 - **Choice:** the app asks on first launch. Change it at any time in Settings → License & Privacy. Switching
   to "Don't share" removes the analytics fields from the server immediately.
 - **Erasure:** Settings → License & Privacy → Erase My Data on the Server deletes everything stored for your

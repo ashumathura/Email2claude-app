@@ -496,6 +496,24 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(old.emailPromptShown)
     }
 
+    func testDonationRequestAppearsOnceAfterTwentyEmails() throws {
+        var config = Config()
+        var shown: [Int] = []
+        for n in 1...60 where config.recordDelivery() { shown.append(n) }
+        XCTAssertEqual(shown, [21], "once, on the delivery after the 20th")
+        XCTAssertTrue(config.donatePromptShown)
+
+        // The count and the shown flag survive a restart, and old configs start at zero.
+        let decoded = try JSONDecoder().decode(Config.self, from: JSONEncoder().encode(config))
+        XCTAssertEqual(decoded.emailsSent, 60)
+        XCTAssertTrue(decoded.donatePromptShown)
+        var restarted = decoded
+        XCTAssertFalse(restarted.recordDelivery())
+        let old = try JSONDecoder().decode(Config.self, from: Data("{}".utf8))
+        XCTAssertEqual(old.emailsSent, 0)
+        XCTAssertFalse(old.donatePromptShown)
+    }
+
     func testPrivacyAndLicenseSettingsPersist() throws {
         var config = Config()
         XCTAssertEqual(config.analyticsChoice, .unset, "nothing is shared until the user answers")
