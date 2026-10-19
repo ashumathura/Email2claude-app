@@ -193,7 +193,7 @@ struct RouteEditorView: View {
 
             footer
         }
-        .frame(width: 540, height: 640)
+        .frame(width: 540, height: min(640, (NSScreen.main?.visibleFrame.height ?? 800) - 60))
         .tint(Brand.accent)
     }
 
