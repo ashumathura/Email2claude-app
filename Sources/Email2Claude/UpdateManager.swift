@@ -70,7 +70,9 @@ final class UpdateManager: ObservableObject {
         var request = makeRequest(event: .open, wantsUpdate: false)
         request.action = "register"
         request.email = EmailAddress.normalize(email)
+        Log.write("license sign-up: sending request")
         let response = try await CheckinClient.send(request)
+        Log.write("license sign-up: answer received (key \(response.licenseKey == nil ? "missing" : "present"))")
         guard let key = response.licenseKey, !key.isEmpty else { throw CheckinClient.ServerError(status: 200) }
         store.config.licenseEmail = request.email ?? ""
         store.config.licenseKey = key
