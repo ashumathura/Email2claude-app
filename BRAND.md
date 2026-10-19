@@ -1,9 +1,9 @@
 # eMail to Claude — brand
 
 The app is called **eMail to Claude** (capital M, as written). The icon is a white envelope with an
-arrow and a spark on a navy squircle. Source artwork lives in `Resources/`:
-`AppIcon.png` (1024 px, transparent corners) and `MenuBarIcon.png` (black template glyph with alpha,
-tinted by macOS for light and dark menu bars).
+arrow on a navy squircle. Source artwork lives in `Resources/`: `AppIcon.png` (1024 px, transparent corners,
+the squircle inset to 824 px as on the macOS icon grid so it matches other icons in the Dock) and
+`MenuBarIcon.png` (black template glyph with alpha, tinted by macOS for light and dark menu bars).
 
 ## Colors
 
