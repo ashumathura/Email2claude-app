@@ -222,7 +222,22 @@ final class CoreTests: XCTestCase {
     func testChatLink() {
         XCTAssertEqual(ChatLink.appURL(from: "https://claude.ai/chat/abc")?.absoluteString, "claude://claude.ai/chat/abc")
         XCTAssertEqual(ChatLink.appURL(from: "claude://claude.ai/chat/abc")?.absoluteString, "claude://claude.ai/chat/abc")
-        XCTAssertNil(ChatLink.appURL(from: "https://example.com/chat/abc"))
+        XCTAssertEqual(ChatLink.appURL(from: "https://chatgpt.com/c/abc")?.absoluteString, "https://chatgpt.com/c/abc")
+        XCTAssertEqual(ChatLink.appURL(from: "  https://example.com/chat/abc\n")?.absoluteString, "https://example.com/chat/abc")
+        XCTAssertNil(ChatLink.appURL(from: "not a link"))
+        XCTAssertNil(ChatLink.appURL(from: "ftp://example.com/x"))
+        XCTAssertNil(ChatLink.appURL(from: "https://"))
+    }
+
+    func testWebTargetsOpenInTheBrowser() throws {
+        let web = Route(domain: "a.com", kind: .chat, name: nil, url: "https://chatgpt.com/c/abc")
+        XCTAssertEqual(web.target.webURL?.absoluteString, "https://chatgpt.com/c/abc")
+        let claude = Route(domain: "a.com", kind: .chat, name: nil, url: "https://claude.ai/chat/abc")
+        XCTAssertNil(claude.target.webURL, "claude.ai links still open in the desktop app")
+        let project = Route(domain: "a.com", kind: .project, name: "P", url: "https://chatgpt.com/g/g-p-1/project")
+        XCTAssertNotNil(project.target.webURL)
+        XCTAssertNil(ChatTarget.newChat.webURL)
+        XCTAssertNil(ChatTarget.sidebar(title: "x").webURL)
     }
 
     // MARK: Prompt & actions
