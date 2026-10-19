@@ -172,6 +172,64 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(perAction.instruction(for: .reply), "rep")
     }
 
+    // MARK: Check-in and updates
+
+    func testVersionOrdering() {
+        XCTAssertTrue(AppVersion.isNewer("0.10.0", than: "0.9.2"))
+        XCTAssertTrue(AppVersion.isNewer("1.0", than: "0.9.9"))
+        XCTAssertFalse(AppVersion.isNewer("1.0.0", than: "1.0"))
+        XCTAssertFalse(AppVersion.isNewer("0.1.0", than: "0.2.0"))
+        XCTAssertEqual(AppVersion.compare("2.0.1", "2.0.1"), .orderedSame)
+        XCTAssertTrue(Checkin.meetsMinimum(system: "14.1", minimum: "13.0"))
+        XCTAssertFalse(Checkin.meetsMinimum(system: "12.7.4", minimum: "13.0"))
+        XCTAssertTrue(Checkin.meetsMinimum(system: "13.0", minimum: nil))
+    }
+
+    func testRequestUsesSnakeCaseKeys() throws {
+        let request = CheckinRequest(
+            deviceId: "11111111-1111-1111-1111-111111111111", event: .updateCheck, analytics: true,
+            wantsUpdate: true, appVersion: "0.1.0", macosVersion: "14.1", osLanguage: "en-NL", licenseKey: "EMC-1")
+        let object = try JSONSerialization.jsonObject(with: Checkin.encoder.encode(request)) as? [String: Any]
+        XCTAssertEqual(object?["device_id"] as? String, "11111111-1111-1111-1111-111111111111")
+        XCTAssertEqual(object?["event"] as? String, "update_check")
+        XCTAssertEqual(object?["wants_update"] as? Bool, true)
+        XCTAssertEqual(object?["macos_version"] as? String, "14.1")
+        XCTAssertEqual(object?["os_language"] as? String, "en-NL")
+        XCTAssertEqual(object?["license_key"] as? String, "EMC-1")
+        XCTAssertNotNil(object?["app_version"])
+    }
+
+    func testResponseDecoding() throws {
+        let full = #"{"ok":true,"license":"valid","latest_version":"0.2.0","update":{"version":"0.2.0","notes":null,"sha256":"ab","min_macos":"13.0","url":"https://x.supabase.co/signed?token=1"}}"#
+        let response = try Checkin.decoder.decode(CheckinResponse.self, from: Data(full.utf8))
+        XCTAssertEqual(response.license, "valid")
+        XCTAssertEqual(response.update?.version, "0.2.0")
+        XCTAssertEqual(response.update?.minMacos, "13.0")
+        XCTAssertNil(response.update?.notes)
+        XCTAssertNil(response.updateBlocked)
+
+        let blocked = #"{"ok":true,"license":"missing","latest_version":"0.2.0","update_blocked":{"version":"0.2.0","reason":"missing"}}"#
+        let withheld = try Checkin.decoder.decode(CheckinResponse.self, from: Data(blocked.utf8))
+        XCTAssertNil(withheld.update)
+        XCTAssertEqual(withheld.updateBlocked?.reason, "missing")
+
+        let plain = try Checkin.decoder.decode(CheckinResponse.self, from: Data(#"{"ok":true}"#.utf8))
+        XCTAssertNil(plain.license)
+    }
+
+    func testPrivacyAndLicenseSettingsPersist() throws {
+        var config = Config()
+        XCTAssertEqual(config.analyticsChoice, .unset, "nothing is shared until the user answers")
+        config.analyticsChoice = .shared
+        config.licenseKey = "EMC-AAAAA"
+        config.lastLicenseStatus = "valid"
+        config.lastUpdateCheck = Date(timeIntervalSince1970: 1_800_000_000)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("e2c-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try config.save(to: url)
+        XCTAssertEqual(Config.load(from: url), config)
+    }
+
     // MARK: Activity log
 
     func testMailLink() {

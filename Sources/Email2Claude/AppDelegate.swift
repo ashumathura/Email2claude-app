@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: SettingsWindowController?
     private var store: ConfigStore!
     private var activity: ActivityStore!
+    private var updates: UpdateManager!
     private var observers = Set<AnyCancellable>()
     private var busy = false {
         didSet { statusItem?.button?.alphaValue = busy ? 0.45 : 1 }
@@ -36,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         store = ConfigStore()
         activity = ActivityStore()
+        updates = UpdateManager(store: store)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = Self.menuBarIcon()
         statusItem.button?.toolTip = "eMail to Claude"
@@ -49,7 +51,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .store(in: &observers)
         registerHotKeys()
         MailReader.sweepOldAttachmentFolders()
+        // Ask about analytics before anything contacts the server or asks for permissions.
+        DispatchQueue.main.async { [weak self] in self?.finishLaunching() }
+    }
+
+    private func finishLaunching() {
+        if store.config.analyticsChoice == .unset && BackendConfig.isPackagedApp {
+            store.config.analyticsChoice = PrivacyChoice.ask()
+            store.config.analyticsChoiceDate = Date()
+        }
         _ = ClaudeBridge.accessibilityGranted(prompt: true)
+        updates.start()
     }
 
     /// The brand glyph from the app bundle, as a template image so macOS tints it for light and dark
@@ -103,6 +115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(sendItem)
 
         menu.addItem(.separator())
+        let update = menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        update.target = self
         let settings = menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(.separator())
@@ -115,8 +129,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         send(action)
     }
 
+    @objc private func checkForUpdates() { updates.checkNow() }
+
     @objc private func showSettings() {
-        if settingsWindow == nil { settingsWindow = SettingsWindowController(store: store, activity: activity) }
+        if settingsWindow == nil { settingsWindow = SettingsWindowController(store: store, activity: activity, updates: updates) }
         settingsWindow?.show()
     }
 

@@ -123,6 +123,13 @@ public struct Config: Codable, Equatable {
     public var keepActivityLog: Bool
     /// Minimum seconds to let Claude load a chat before pasting.
     public var openDelay: Double
+    /// What the user chose to share with the developer (see Settings → License & Privacy).
+    public var analyticsChoice: AnalyticsChoice
+    public var analyticsChoiceDate: Date?
+    public var licenseKey: String
+    public var lastUpdateCheck: Date?
+    /// valid, missing, invalid, revoked or expired, from the last weekly check.
+    public var lastLicenseStatus: String?
 
     public init(
         routes: [Route] = [],
@@ -130,7 +137,12 @@ public struct Config: Codable, Equatable {
         autoSend: Bool = true,
         askForUnknownRoutes: Bool = true,
         keepActivityLog: Bool = true,
-        openDelay: Double = 1.0
+        openDelay: Double = 1.0,
+        analyticsChoice: AnalyticsChoice = .unset,
+        analyticsChoiceDate: Date? = nil,
+        licenseKey: String = "",
+        lastUpdateCheck: Date? = nil,
+        lastLicenseStatus: String? = nil
     ) {
         self.routes = routes
         self.actions = actions
@@ -138,10 +150,16 @@ public struct Config: Codable, Equatable {
         self.askForUnknownRoutes = askForUnknownRoutes
         self.keepActivityLog = keepActivityLog
         self.openDelay = openDelay
+        self.analyticsChoice = analyticsChoice
+        self.analyticsChoiceDate = analyticsChoiceDate
+        self.licenseKey = licenseKey
+        self.lastUpdateCheck = lastUpdateCheck
+        self.lastLicenseStatus = lastLicenseStatus
     }
 
     private enum CodingKeys: String, CodingKey {
         case routes, actions, autoSend, askForUnknownRoutes, keepActivityLog, openDelay
+        case analyticsChoice, analyticsChoiceDate, licenseKey, lastUpdateCheck, lastLicenseStatus
         // Written by earlier versions: one reply prompt, then a prompt per action.
         case instruction, instructions
     }
@@ -155,6 +173,11 @@ public struct Config: Codable, Equatable {
         askForUnknownRoutes = try c.decodeIfPresent(Bool.self, forKey: .askForUnknownRoutes) ?? d.askForUnknownRoutes
         keepActivityLog = try c.decodeIfPresent(Bool.self, forKey: .keepActivityLog) ?? d.keepActivityLog
         openDelay = try c.decodeIfPresent(Double.self, forKey: .openDelay) ?? d.openDelay
+        analyticsChoice = try c.decodeIfPresent(AnalyticsChoice.self, forKey: .analyticsChoice) ?? d.analyticsChoice
+        analyticsChoiceDate = try c.decodeIfPresent(Date.self, forKey: .analyticsChoiceDate)
+        licenseKey = try c.decodeIfPresent(String.self, forKey: .licenseKey) ?? d.licenseKey
+        lastUpdateCheck = try c.decodeIfPresent(Date.self, forKey: .lastUpdateCheck)
+        lastLicenseStatus = try c.decodeIfPresent(String.self, forKey: .lastLicenseStatus)
         var legacy = try c.decodeIfPresent([String: String].self, forKey: .instructions) ?? [:]
         if let single = try c.decodeIfPresent(String.self, forKey: .instruction), legacy[Action.reply.rawValue] == nil {
             legacy[Action.reply.rawValue] = single
@@ -174,6 +197,11 @@ public struct Config: Codable, Equatable {
         try c.encode(askForUnknownRoutes, forKey: .askForUnknownRoutes)
         try c.encode(keepActivityLog, forKey: .keepActivityLog)
         try c.encode(openDelay, forKey: .openDelay)
+        try c.encode(analyticsChoice, forKey: .analyticsChoice)
+        try c.encodeIfPresent(analyticsChoiceDate, forKey: .analyticsChoiceDate)
+        try c.encode(licenseKey, forKey: .licenseKey)
+        try c.encodeIfPresent(lastUpdateCheck, forKey: .lastUpdateCheck)
+        try c.encodeIfPresent(lastLicenseStatus, forKey: .lastLicenseStatus)
     }
 
     // MARK: Actions

@@ -5,6 +5,7 @@ import Email2ClaudeCore
 struct SettingsView: View {
     @ObservedObject var store: ConfigStore
     @ObservedObject var activity: ActivityStore
+    @ObservedObject var updates: UpdateManager
 
     var body: some View {
         TabView {
@@ -16,6 +17,8 @@ struct SettingsView: View {
                 .tabItem { Label("Activity", systemImage: "clock.arrow.circlepath") }
             GeneralTab(store: store)
                 .tabItem { Label("General", systemImage: "gearshape") }
+            AccountTab(store: store, updates: updates)
+                .tabItem { Label("License & Privacy", systemImage: "key") }
         }
         .frame(width: 780, height: 620)
         .tint(Brand.accent)
@@ -473,12 +476,110 @@ private struct GeneralTab: View {
     }
 }
 
+// MARK: - License & Privacy
+
+private struct AccountTab: View {
+    @ObservedObject var store: ConfigStore
+    @ObservedObject var updates: UpdateManager
+    @State private var confirmErase = false
+
+    private var choice: Binding<AnalyticsChoice> {
+        Binding(
+            get: { store.config.analyticsChoice == .shared ? .shared : .notShared },
+            set: { newValue in
+                store.config.analyticsChoice = newValue
+                store.config.analyticsChoiceDate = Date()
+                updates.syncConsent()
+            })
+    }
+
+    private var lastChecked: String {
+        store.config.lastUpdateCheck?.formatted(date: .abbreviated, time: .shortened) ?? "Not yet"
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("License key", text: $store.config.licenseKey, prompt: Text("EMC-XXXXX-XXXXX-XXXXX-XXXXX"))
+                    .font(.system(.body, design: .monospaced))
+                LabeledContent("Status") { licenseStatus }
+            } header: {
+                Text("License")
+            } footer: {
+                Text("Your license is checked about once a week, when the app looks for updates. A valid license lets you download updates. The app itself keeps working either way.")
+            }
+
+            Section {
+                LabeledContent("Installed version", value: BackendConfig.appVersion)
+                LabeledContent("Last checked", value: lastChecked)
+                HStack {
+                    Button("Check for Updates Now") { updates.checkNow() }
+                        .disabled(updates.busy)
+                    if updates.busy { ProgressView().controlSize(.small) }
+                }
+                if !updates.status.isEmpty {
+                    Text(updates.status).font(.callout).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Updates")
+            } footer: {
+                Text("The app checks once a week and asks before it downloads anything. Updating restarts the app.")
+            }
+
+            Section {
+                Picker("Analytics", selection: choice) {
+                    Text("Share analytics").tag(AnalyticsChoice.shared)
+                    Text("Don't share analytics").tag(AnalyticsChoice.notShared)
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+                Callout {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("What is stored on the server")
+                            .font(.headline)
+                        ForEach(store.config.analyticsChoice == .shared ? PrivacyText.sharedItems : PrivacyText.minimalItems, id: \.self) { item in
+                            HStack(alignment: .top, spacing: 6) { Text("•"); Text(item) }
+                        }
+                    }
+                }
+                Button("Erase My Data on the Server…") { confirmErase = true }
+                if let url = BackendConfig.privacyPolicyURL { Link("Privacy policy", destination: url) }
+            } header: {
+                Text("Privacy")
+            } footer: {
+                Text("Your emails are never sent to the developer: they go from Mail to Claude on this Mac. This only covers update, license and usage information. Switching to \"Don't share\" removes the analytics fields from the server right away.")
+            }
+        }
+        .formStyle(.grouped)
+        .alert("Erase your data on the server?", isPresented: $confirmErase) {
+            Button("Erase", role: .destructive) { Task { await updates.erase() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This deletes everything stored about this install, including your device ID, and starts a new one. Your license key stays valid.")
+        }
+    }
+
+    @ViewBuilder private var licenseStatus: some View {
+        switch store.config.lastLicenseStatus {
+        case "valid":
+            Label("Valid", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        case "missing":
+            Label("No key entered", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+        case .some(let other):
+            Label(other == "expired" ? "Expired" : other == "revoked" ? "No longer active" : "Not valid", systemImage: "xmark.octagon.fill")
+                .foregroundStyle(.red)
+        case .none:
+            Text("Not checked yet").foregroundStyle(.secondary)
+        }
+    }
+}
+
 // MARK: - Window
 
 @MainActor
 final class SettingsWindowController: NSWindowController {
-    init(store: ConfigStore, activity: ActivityStore) {
-        let view = SettingsView(store: store, activity: activity)
+    init(store: ConfigStore, activity: ActivityStore, updates: UpdateManager) {
+        let view = SettingsView(store: store, activity: activity, updates: updates)
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
         window.title = "eMail to Claude Settings"
         window.styleMask = [.titled, .closable]

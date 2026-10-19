@@ -1,0 +1,92 @@
+name: Release
+
+# Builds, signs and notarizes the DMG, uploads it to the private Supabase "releases" bucket and
+# records it in the releases table. It stays unpublished (invisible to the app) until you publish it:
+#   update public.releases set published = true where version = '0.2.0';
+# or tick "publish" when running this workflow by hand.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, e.g. 0.2.0 (a tag push uses the tag name)"
+        required: true
+      notes:
+        description: "Release notes shown in the update prompt"
+        required: false
+        default: ""
+      publish:
+        description: "Make it available to users immediately"
+        type: boolean
+        default: false
+
+env:
+  SUPABASE_URL: https://yomgyukfzlnjxcvdsivw.supabase.co
+  HAS_CERT: ${{ secrets.MACOS_CERT_P12 != '' }}
+
+jobs:
+  release:
+    runs-on: macos-14   # Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then VERSION="${GITHUB_REF_NAME#v}"; fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: swift test
+
+      - name: Import signing certificate
+        if: ${{ env.HAS_CERT == 'true' }}
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN=$RUNNER_TEMP/build.keychain
+          security create-keychain -p ci "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p ci "$KEYCHAIN"
+          echo "$CERT_P12" | base64 --decode > $RUNNER_TEMP/cert.p12
+          security import $RUNNER_TEMP/cert.p12 -k "$KEYCHAIN" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain
+
+      - name: Package
+        env:
+          SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: ./scripts/package.sh
+
+      - name: Upload to Supabase
+        env:
+          SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NOTES: ${{ inputs.notes }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          [ -n "$SERVICE_KEY" ] || { echo "SUPABASE_SERVICE_ROLE_KEY secret is missing"; exit 1; }
+          FILE=dist/eMail-to-Claude.dmg
+          SHA=$(shasum -a 256 "$FILE" | cut -d' ' -f1)
+          OBJECT="$VERSION/eMail-to-Claude.dmg"
+          curl -fsS -X POST "$SUPABASE_URL/storage/v1/object/releases/$OBJECT" \
+            -H "Authorization: Bearer $SERVICE_KEY" -H "apikey: $SERVICE_KEY" \
+            -H "Content-Type: application/x-apple-diskimage" -H "x-upsert: true" \
+            --data-binary @"$FILE" > /dev/null
+          BODY=$(jq -n --arg v "$VERSION" --arg p "$OBJECT" --arg s "$SHA" --arg n "$NOTES" --arg pub "$PUBLISH" \
+            '{version: $v, dmg_path: $p, sha256: $s, notes: $n, published: ($pub == "true")}')
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/releases?on_conflict=version" \
+            -H "Authorization: Bearer $SERVICE_KEY" -H "apikey: $SERVICE_KEY" \
+            -H "Content-Type: application/json" -H "Prefer: resolution=merge-duplicates" \
+            -d "$BODY" > /dev/null
+          echo "Uploaded $OBJECT (sha256 $SHA), published=$PUBLISH"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eMail-to-Claude-${{ env.VERSION }}
+          path: dist/eMail-to-Claude.dmg

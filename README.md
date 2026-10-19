@@ -39,6 +39,21 @@ Every email sent to Claude is logged on this Mac (date, subject, sender, route, 
 Activity, searchable. Click a subject to open the email in Mail; click a route to open its chat or
 project in Claude. Claude has no way to jump to a message inside a chat. Turn it off in General.
 
+## Updates, license and privacy
+
+About once a week (and when it opens) the app checks in with the Supabase backend in `supabase/`:
+
+- **Updates.** If a newer release is published and the license key is valid, the app asks, downloads the
+  DMG over a short-lived signed link, verifies its checksum and that it is signed by the same developer team
+  as the running app, replaces itself and reopens. Releases are cut with the Release workflow
+  ([docs/RELEASING.md](docs/RELEASING.md), which also covers licenses).
+- **Privacy.** On first launch the user chooses to share analytics or not. Not sharing stores only a random
+  device ID and the first and last use dates; sharing also stores versions, language, IP, country, city and
+  the license key. Opting out clears the analytics fields; users can erase everything. See
+  [PRIVACY.md](PRIVACY.md) (a draft to have reviewed).
+- **Backend.** `supabase/migrations` holds the schema (all tables locked by row-level security) and
+  `supabase/functions/checkin` the Edge Function. The Backend smoke test workflow checks it.
+
 ## Setup
 1. Install the DMG and open the app (menu bar only, no Dock icon).
 2. Grant **Accessibility** (System Settings → Privacy & Security) so it can read Claude's chat list and paste.

@@ -1,0 +1,4 @@
+# Supabase project settings kept with the code. Project ref: yomgyukfzlnjxcvdsivw (eMail to Claude App, eu-west-1).
+
+[functions.checkin]
+verify_jwt = false
