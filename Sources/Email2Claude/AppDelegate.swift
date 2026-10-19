@@ -189,6 +189,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         actionName: config.name(for: action), mode: mode, prompt: instruction))
                 }
                 Log.write("\(action.rawValue): done in \(Log.seconds(since: start))")
+                // After the 20th email, the next delivery asks once for a donation. It waits a moment so the
+                // paste has finished, and runs apart from this task so it never blocks the next send.
+                if store.config.recordDelivery() {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(1.5))
+                        Donate.showDialog()
+                    }
+                }
             } catch {
                 NSSound.beep()
                 alert("eMail to Claude", error.localizedDescription)

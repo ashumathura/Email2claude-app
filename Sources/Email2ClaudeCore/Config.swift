@@ -162,6 +162,13 @@ public struct Config: Codable, Equatable {
     public var lastUpdateCheck: Date?
     /// valid, missing, invalid, revoked or expired, from the last weekly check.
     public var lastLicenseStatus: String?
+    /// Emails delivered to the chat so far, for the one-time donation request.
+    public var emailsSent: Int
+    /// The donation request has been shown (once, after `donateAfterEmails` emails).
+    public var donatePromptShown: Bool
+
+    /// The request appears on the delivery after this many.
+    public static let donateAfterEmails = 20
 
     public init(
         routes: [Route] = [],
@@ -176,8 +183,12 @@ public struct Config: Codable, Equatable {
         licenseEmail: String = "",
         emailPromptShown: Bool = false,
         lastUpdateCheck: Date? = nil,
-        lastLicenseStatus: String? = nil
+        lastLicenseStatus: String? = nil,
+        emailsSent: Int = 0,
+        donatePromptShown: Bool = false
     ) {
+        self.emailsSent = emailsSent
+        self.donatePromptShown = donatePromptShown
         self.routes = routes
         self.actions = actions
         self.autoSend = autoSend
@@ -196,6 +207,7 @@ public struct Config: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case routes, actions, autoSend, askForUnknownRoutes, keepActivityLog, openDelay
         case analyticsChoice, analyticsChoiceDate, licenseKey, licenseEmail, emailPromptShown, lastUpdateCheck, lastLicenseStatus
+        case emailsSent, donatePromptShown
         // Written by earlier versions: one reply prompt, then a prompt per action.
         case instruction, instructions
     }
@@ -216,6 +228,8 @@ public struct Config: Codable, Equatable {
         emailPromptShown = try c.decodeIfPresent(Bool.self, forKey: .emailPromptShown) ?? d.emailPromptShown
         lastUpdateCheck = try c.decodeIfPresent(Date.self, forKey: .lastUpdateCheck)
         lastLicenseStatus = try c.decodeIfPresent(String.self, forKey: .lastLicenseStatus)
+        emailsSent = try c.decodeIfPresent(Int.self, forKey: .emailsSent) ?? 0
+        donatePromptShown = try c.decodeIfPresent(Bool.self, forKey: .donatePromptShown) ?? false
         var legacy = try c.decodeIfPresent([String: String].self, forKey: .instructions) ?? [:]
         if let single = try c.decodeIfPresent(String.self, forKey: .instruction), legacy[Action.reply.rawValue] == nil {
             legacy[Action.reply.rawValue] = single
@@ -242,6 +256,17 @@ public struct Config: Codable, Equatable {
         try c.encode(emailPromptShown, forKey: .emailPromptShown)
         try c.encodeIfPresent(lastUpdateCheck, forKey: .lastUpdateCheck)
         try c.encodeIfPresent(lastLicenseStatus, forKey: .lastLicenseStatus)
+        try c.encode(emailsSent, forKey: .emailsSent)
+        try c.encode(donatePromptShown, forKey: .donatePromptShown)
+    }
+
+    /// Counts a delivered email. Returns true exactly once: on the delivery after the 20th, when the
+    /// donation request should be shown.
+    public mutating func recordDelivery() -> Bool {
+        emailsSent += 1
+        guard emailsSent > Config.donateAfterEmails, !donatePromptShown else { return false }
+        donatePromptShown = true
+        return true
     }
 
     // MARK: Actions
