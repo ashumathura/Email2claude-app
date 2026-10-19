@@ -527,6 +527,12 @@ private struct AccountTab: View {
             }
 
             Section {
+                LocalPromiseBanner()
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+            }
+
+            Section {
                 Picker("Analytics", selection: choice) {
                     Text("Share analytics").tag(AnalyticsChoice.shared)
                     Text("Don't share analytics").tag(AnalyticsChoice.notShared)
@@ -547,7 +553,7 @@ private struct AccountTab: View {
             } header: {
                 Text("Privacy")
             } footer: {
-                Text("Your emails are never sent to the developer: they go from Mail to Claude on this Mac. This only covers update, license and usage information. Switching to \"Don't share\" removes the analytics fields from the server right away.")
+                Text("This only covers update, license and usage information. Switching to \"Don't share\" removes the analytics fields from the server right away.")
             }
         }
         .formStyle(.grouped)

@@ -14,7 +14,33 @@ enum PrivacyText {
         "A random device ID, and the dates you first and last used the app",
         "Nothing else: no IP address, location, versions or language are stored",
     ]
-    static let footer = "Optional, and no feature depends on it. In both cases the app sends your license key and versions when it checks for updates, so it can check your license and offer a compatible update; they are only stored if you share analytics, and your IP address is not stored either. Data is kept with Supabase in the EU (Ireland). You can change your choice or erase your data at any time in Settings → License & Privacy."
+    /// The promise that matters most, shown wherever the analytics choice is.
+    static let localTitle = "Your emails never leave your Mac"
+    static let localBody = "Your emails, attachments and prompts are never sent to the developer or to any server of ours. They go straight from Mail into the Claude app on this Mac, and nowhere else. Once they are in Claude, Claude handles them under its own terms, exactly as if you had pasted them yourself."
+
+    static let footer = "This choice is only about usage information, and no feature depends on it. In both cases the app sends your license key and versions when it checks for updates, so it can check your license and offer a compatible update; they are only stored if you share analytics, and your IP address is not stored either. Data is kept with Supabase in the EU (Ireland). You can change your choice or erase your data at any time in Settings → License & Privacy."
+}
+
+/// A prominent reminder that email content stays on this Mac.
+struct LocalPromiseBanner: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "lock.shield.fill")
+                .font(.system(size: 26))
+                .foregroundStyle(Brand.accent)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(PrivacyText.localTitle).font(.headline)
+                Text(PrivacyText.localBody)
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Brand.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Brand.accent.opacity(0.35)))
+    }
 }
 
 /// The first-run question. Two equal choices, none preselected.
@@ -32,6 +58,11 @@ struct PrivacyChoiceView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+
+            LocalPromiseBanner()
+
+            Text("Optionally, choose what else you're happy to share:")
+                .font(.callout.weight(.medium))
 
             HStack(alignment: .top, spacing: 14) {
                 card(
@@ -52,7 +83,7 @@ struct PrivacyChoiceView: View {
             }
         }
         .padding(24)
-        .frame(width: 660)
+        .frame(width: 680, height: 760)
         .tint(Brand.accent)
     }
 
@@ -76,7 +107,7 @@ struct PrivacyChoiceView: View {
                 .keyboardShortcut(choice == .notShared ? .cancelAction : nil)
         }
         .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 230, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Brand.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

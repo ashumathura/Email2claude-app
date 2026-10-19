@@ -6,7 +6,7 @@
 
 **Controller:** [Name, address, contact email]
 
-## Your emails
+## Your emails never leave your Mac
 eMail to Claude reads the email you select in Apple Mail and pastes it into the Claude desktop app on your
 Mac. Your emails and attachments are not sent to the developer or to any server operated by the developer.
 Once an email is in Claude it is handled under Claude's own terms and privacy settings.
