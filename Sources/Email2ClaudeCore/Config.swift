@@ -21,16 +21,6 @@ public enum ChatTarget: Equatable {
     case project(name: String, link: URL?)
     case newChat
     case incognito
-    /// Another service's Mac app: bring it to the front and start a new chat there.
-    case desktop(bundleID: String)
-
-    public var desktopBundleID: String? {
-        if case .desktop(let id) = self { return id }
-        return nil
-    }
-
-    /// True when the Claude app handles it (rather than the browser or another service's app).
-    public var usesClaudeApp: Bool { webURL == nil && desktopBundleID == nil }
 
     /// Set when the destination is an ordinary web address (not claude.ai or claude://), such as another
     /// chat service. It opens in the default browser instead of the Claude desktop app.
@@ -70,21 +60,14 @@ public struct Route: Codable, Equatable, Identifiable {
     /// Standing instructions added to the prompt whenever this route is used, for example
     /// "Always reply formally, in Dutch."
     public var instructions: String?
-    /// The chat service this route sends to.
-    public var provider: ChatProvider
-    /// For services with a Mac app: use the app (true) or the browser (false).
-    public var useApp: Bool
 
     /// A From rule and a To rule for the same domain are different routes.
     public var id: String { "\(matchOn.rawValue):\(domain)" }
 
     public init(
         domain: String, matchOn: MatchField = .to, kind: DestinationKind = .newChat,
-        name: String? = nil, url: String? = nil, instructions: String? = nil,
-        provider: ChatProvider = .claude, useApp: Bool = true
+        name: String? = nil, url: String? = nil, instructions: String? = nil
     ) {
-        self.provider = provider
-        self.useApp = useApp
         self.domain = domain
         self.matchOn = matchOn
         self.kind = kind
@@ -94,7 +77,7 @@ public struct Route: Codable, Equatable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case domain, matchOn, kind, name, url, instructions, provider, useApp
+        case domain, matchOn, kind, name, url, instructions
         // Written by earlier versions, which routed on full addresses.
         case address, chatTitle, chatURL
     }
@@ -109,8 +92,6 @@ public struct Route: Codable, Equatable, Identifiable {
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? legacyTitle
         url = try c.decodeIfPresent(String.self, forKey: .url) ?? legacyURL
         instructions = try c.decodeIfPresent(String.self, forKey: .instructions)
-        provider = try c.decodeIfPresent(ChatProvider.self, forKey: .provider) ?? .claude
-        useApp = try c.decodeIfPresent(Bool.self, forKey: .useApp) ?? true
         kind = try c.decodeIfPresent(DestinationKind.self, forKey: .kind)
             ?? ((legacyTitle ?? legacyURL) != nil ? .chat : .newChat)
     }
@@ -123,24 +104,14 @@ public struct Route: Codable, Equatable, Identifiable {
         try c.encodeIfPresent(name, forKey: .name)
         try c.encodeIfPresent(url, forKey: .url)
         try c.encodeIfPresent(instructions, forKey: .instructions)
-        try c.encode(provider, forKey: .provider)
-        try c.encode(useApp, forKey: .useApp)
     }
-
-    /// The Claude app is driven through its sidebar and links; every other combination goes to the
-    /// browser, or to a new chat in that service's own app.
-    public var usesClaudeApp: Bool { provider == .claude && useApp }
-
-    /// Whether the service's Mac app is used for this route.
-    public var usesDesktopApp: Bool { provider.hasDesktopApp && useApp }
 
     /// True when the rule names one address rather than a whole domain.
     public var isAddressRule: Bool { domain.contains("@") && !domain.hasPrefix("@") }
 
     public var target: ChatTarget {
-        let label = name?.trimmingCharacters(in: .whitespaces) ?? ""
-        guard usesClaudeApp else { return otherServiceTarget(label: label) }
         let link = url.flatMap { ChatLink.appURL(from: $0) }
+        let label = name?.trimmingCharacters(in: .whitespaces) ?? ""
         switch kind {
         case .chat:
             if let link { return .link(link) }
@@ -152,39 +123,15 @@ public struct Route: Codable, Equatable, Identifiable {
         }
     }
 
-    /// Browser and non-Claude destinations. Chats and projects need a link there, because only the
-    /// Claude app can be searched by chat title.
-    private func otherServiceTarget(label: String) -> ChatTarget {
-        let link = url.flatMap { ChatLink.webURL(from: $0) }
-        let newChat: ChatTarget = usesDesktopApp
-            ? .desktop(bundleID: provider.desktopBundleID ?? "")
-            : .link(provider.newChatURL)
-        switch kind {
-        case .chat: return link.map { .link($0) } ?? newChat
-        case .project: return link.map { .project(name: label, link: $0) } ?? newChat
-        case .newChat: return newChat
-        case .incognito: return provider.incognitoURL.map { .link($0) } ?? newChat
-        }
-    }
-
-    /// Names the service when it isn't the Claude app, so lists make clear where an email goes.
-    private var serviceLabel: String? {
-        if usesClaudeApp { return nil }
-        if usesDesktopApp { return provider.title + " app" }
-        return provider.hasDesktopApp ? provider.title + " (browser)" : provider.title
-    }
-
     /// What the settings list shows under the domain.
     public var destinationDescription: String {
         let label = name?.trimmingCharacters(in: .whitespaces) ?? ""
-        let base: String
         switch kind {
-        case .chat: base = label.isEmpty ? (url ?? "Existing chat") : label
-        case .project: base = "New chat in project: " + (label.isEmpty ? (url ?? "") : label)
-        case .newChat: base = "New chat each time"
-        case .incognito: base = provider.incognitoTitle
+        case .chat: return label.isEmpty ? (url ?? "Existing chat") : label
+        case .project: return "New chat in project: " + (label.isEmpty ? (url ?? "") : label)
+        case .newChat: return "New chat each time"
+        case .incognito: return "Incognito chat"
         }
-        return serviceLabel.map { "\($0) · " + base } ?? base
     }
 }
 
