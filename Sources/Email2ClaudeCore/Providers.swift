@@ -73,6 +73,22 @@ public enum ChatProvider: String, Codable, CaseIterable, Identifiable {
     /// inspected the way the Claude app can, so this is a fixed wait.
     public var webLoadDelay: Double { self == .gemini ? 4.0 : 3.0 }
 
+    /// How this service's links start, for hints and error messages.
+    public var linkHost: String {
+        switch self {
+        case .claude: return "claude.ai"
+        case .chatgpt: return "chatgpt.com"
+        case .gemini: return "gemini.google.com"
+        }
+    }
+
+    /// True when `link` is an address of this service. Claude also accepts claude:// links.
+    public func accepts(link: String) -> Bool {
+        guard let url = ChatLink.appURL(from: link) else { return false }
+        if self == .claude, url.scheme?.lowercased() == "claude" { return true }
+        return ChatProvider.matching(url) == self
+    }
+
     /// Which service a web address belongs to, if it is one of ours.
     public static func matching(_ url: URL) -> ChatProvider? {
         guard let host = url.host?.lowercased() else { return nil }

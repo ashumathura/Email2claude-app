@@ -130,7 +130,16 @@ struct RouteEditorView: View {
 
     private var linkIsValid: Bool {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty || ChatLink.appURL(from: trimmed) != nil
+        return trimmed.isEmpty || provider.accepts(link: trimmed)
+    }
+
+    /// Why the link was rejected: not a link at all, or a link to a different service.
+    private var linkProblem: String {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ChatLink.appURL(from: trimmed) != nil else {
+            return "That doesn't look like a link. It should start with https://\(provider.linkHost)/"
+        }
+        return "That isn't a \(provider.title) link. \(provider.title) links start with https://\(provider.linkHost)/"
     }
 
     private var isValid: Bool {
@@ -331,10 +340,10 @@ struct RouteEditorView: View {
             TextField(label, text: $url, prompt: Text(claudeApp ? placeholder + " (optional)" : placeholder), axis: .vertical)
                 .lineLimit(2...5)
             if !linkIsValid {
-                Text("That doesn't look like a web link. It should start with https://").font(.caption).foregroundStyle(.red)
+                Text(linkProblem).font(.caption).foregroundStyle(.red)
             } else if url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(claudeApp
-                     ? "A link is the most reliable way to find it. Links to claude.ai open in the Claude app; any other web link opens in your browser."
+                     ? "A link is the most reliable way to find it. It opens in the Claude app."
                      : "Required. Open the \(kind == .project ? "project" : "chat") in \(provider.title) and copy its address from the browser.")
                     .font(.caption).foregroundStyle(.secondary)
             }

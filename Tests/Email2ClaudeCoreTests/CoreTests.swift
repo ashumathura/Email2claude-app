@@ -270,6 +270,21 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(ChatProvider.matching(URL(string: "https://example.com")!))
     }
 
+    func testEachServiceOnlyAcceptsItsOwnLinks() {
+        XCTAssertTrue(ChatProvider.claude.accepts(link: "https://claude.ai/chat/abc"))
+        XCTAssertTrue(ChatProvider.claude.accepts(link: "claude://claude.ai/chat/abc"))
+        XCTAssertFalse(ChatProvider.claude.accepts(link: "https://chatgpt.com/c/1"))
+        XCTAssertFalse(ChatProvider.claude.accepts(link: "https://evilclaude.ai/chat/abc"))
+        XCTAssertTrue(ChatProvider.chatgpt.accepts(link: "https://chatgpt.com/c/1"))
+        XCTAssertTrue(ChatProvider.chatgpt.accepts(link: "https://chat.openai.com/c/1"))
+        XCTAssertFalse(ChatProvider.chatgpt.accepts(link: "https://claude.ai/chat/abc"))
+        XCTAssertFalse(ChatProvider.chatgpt.accepts(link: "claude://claude.ai/chat/abc"))
+        XCTAssertTrue(ChatProvider.gemini.accepts(link: "https://gemini.google.com/app/123"))
+        XCTAssertFalse(ChatProvider.gemini.accepts(link: "https://www.google.com/"))
+        XCTAssertFalse(ChatProvider.gemini.accepts(link: "not a link"))
+        XCTAssertFalse(ChatProvider.claude.accepts(link: ""))
+    }
+
     func testProviderPersistsAndOldRoutesAreClaude() throws {
         let route = Route(domain: "a.com", kind: .newChat, provider: .gemini, useApp: false)
         let decoded = try JSONDecoder().decode(Route.self, from: JSONEncoder().encode(route))
