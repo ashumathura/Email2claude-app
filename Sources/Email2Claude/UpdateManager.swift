@@ -51,12 +51,26 @@ final class UpdateManager: ObservableObject {
         guard BackendConfig.isPackagedApp else { return }
         licenseCheck?.cancel()
         store.config.lastLicenseStatus = nil
+        // An emptied key field means no license, so the address it was issued to no longer applies either.
+        if store.config.licenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            store.config.licenseEmail = ""
+        }
         guard store.config.licenseKey.trimmingCharacters(in: .whitespacesAndNewlines).count >= 27 else { return }
         licenseCheck = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(800))
             guard !Task.isCancelled else { return }
             await self?.run(event: .updateCheck, manual: false, wantsUpdate: true, quiet: true)
         }
+    }
+
+    /// Forgets the license on this Mac: the key, the address it was issued to and its status, so the
+    /// app is unlicensed again and can ask for a key. The key itself stays valid on the server.
+    func removeLicense() {
+        licenseCheck?.cancel()
+        store.config.licenseKey = ""
+        store.config.licenseEmail = ""
+        store.config.lastLicenseStatus = nil
+        Log.write("license removed on this Mac")
     }
 
     /// Tell the server about a changed analytics choice right away, so opting out clears the data now.

@@ -622,6 +622,7 @@ private struct AccountTab: View {
     @ObservedObject var store: ConfigStore
     @ObservedObject var updates: UpdateManager
     @State private var confirmErase = false
+    @State private var confirmRemove = false
     @State private var email = ""
     @State private var registering = false
     @State private var registerError: String?
@@ -652,6 +653,9 @@ private struct AccountTab: View {
                     LabeledContent("Issued to", value: store.config.licenseEmail)
                 }
                 LabeledContent("Status") { licenseStatus }
+                if !store.config.licenseKey.isEmpty || !store.config.licenseEmail.isEmpty {
+                    Button("Remove License…", role: .destructive) { confirmRemove = true }
+                }
             } header: {
                 Text("License")
             } footer: {
@@ -706,6 +710,12 @@ private struct AccountTab: View {
             }
         }
         .formStyle(.grouped)
+        .alert("Remove the license from this Mac?", isPresented: $confirmRemove) {
+            Button("Remove", role: .destructive) { updates.removeLicense() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The key and the email address it was issued to are forgotten here, and updates stop until you add a key again. The app keeps working. The key stays valid, so you can enter it again or get one with your email address.")
+        }
         .alert("Erase your data on the server?", isPresented: $confirmErase) {
             Button("Erase", role: .destructive) { Task { await updates.erase() } }
             Button("Cancel", role: .cancel) {}
