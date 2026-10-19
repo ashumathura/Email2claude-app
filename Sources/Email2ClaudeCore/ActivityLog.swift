@@ -55,9 +55,10 @@ public struct ActivityEntry: Codable, Equatable, Identifiable {
 
     /// New and incognito chats have nothing to go back to.
     public var canOpenChat: Bool {
+        guard destination.kind == .chat || destination.kind == .project else { return false }
         switch destination.target {
         case .link, .sidebar, .project: return true
-        case .newChat, .incognito: return false
+        case .newChat, .incognito, .desktop: return false
         }
     }
 

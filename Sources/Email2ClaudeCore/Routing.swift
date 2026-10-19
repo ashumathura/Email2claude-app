@@ -142,6 +142,15 @@ public enum ChatLink {
         }
     }
 
+    /// The same link as an address for the browser: claude:// becomes https://, web addresses are kept.
+    public static func webURL(from string: String) -> URL? {
+        guard var comps = appURL(from: string).flatMap({ URLComponents(url: $0, resolvingAgainstBaseURL: false) }),
+              comps.host?.isEmpty == false
+        else { return nil }
+        if comps.scheme?.lowercased() == "claude" { comps.scheme = "https" }
+        return comps.url
+    }
+
     /// True for http(s) addresses, which open in the default browser rather than the Claude app.
     public static func isWebLink(_ url: URL) -> Bool {
         let scheme = url.scheme?.lowercased()
