@@ -35,6 +35,24 @@ check "minimal check-in" 200 "$(request false false '')" '.ok == true'
 check "no license key" 200 "$(request false true '')" '.license == "missing"'
 check "unknown license key" 200 "$(request false true 'EMC-AAAAA-AAAAA-AAAAA-AAAAA')" '.license == "invalid"'
 
+# Self-service license: one key per email, returned only to the device that asked first.
+OTHER=00000000-0000-4000-8000-000000000002
+EMAIL="smoke-test@example.invalid"
+register() {  # device, email
+    jq -nc --arg d "$1" --arg e "$2" '{device_id: $d, action: "register", email: $e}'
+}
+check "register rejects a bad email" 400 "$(register "$DEVICE" 'nope')" '.error == "bad_email"'
+out=$(curl -sS -m 30 -X POST "$URL" -H 'Content-Type: application/json' -d "$(register "$DEVICE" "$EMAIL")")
+echo "[register] $out"
+KEY=$(echo "$out" | jq -er '.license_key')
+echo "$KEY" | grep -Eq '^EMC(-[A-Z2-9]{5}){4}$' || { echo "FAIL: odd key format"; exit 1; }
+check "register again, same device" 200 "$(register "$DEVICE" "$(echo "$EMAIL" | tr a-z A-Z)")" ".license_key == \"$KEY\""
+check "register, other device" 409 "$(register "$OTHER" "$EMAIL")" '.error == "already_registered"'
+check "new key is valid" 200 "$(request false true "$KEY")" '.license == "valid"'
+# Erasing clears the email and device link from the license row; the key stays valid.
+check "erase with key" 200 "$(jq -nc --arg d "$DEVICE" --arg k "$KEY" '{device_id: $d, action: "erase", license_key: $k}')" '.ok == true'
+check "key still valid after erase" 200 "$(request false true "$KEY")" '.license == "valid"'
+
 case "$FINAL" in
     analytics) check "analytics check-in" 200 "$(request true false 'EMC-TEST')" '.ok == true' ;;
     minimal)

@@ -65,6 +65,18 @@ final class UpdateManager: ObservableObject {
         Task { await run(event: .consentChange, manual: false, wantsUpdate: false) }
     }
 
+    /// Asks the server for a free license key for this address and saves it. Throws with a readable message.
+    func registerLicense(email: String) async throws {
+        var request = makeRequest(event: .open, wantsUpdate: false)
+        request.action = "register"
+        request.email = EmailAddress.normalize(email)
+        let response = try await CheckinClient.send(request)
+        guard let key = response.licenseKey, !key.isEmpty else { throw CheckinClient.ServerError(status: 200) }
+        store.config.licenseEmail = request.email ?? ""
+        store.config.licenseKey = key
+        store.config.lastLicenseStatus = response.license ?? "valid"
+    }
+
     /// Deletes everything stored for this install on the server, and starts a new random ID.
     func erase() async {
         guard BackendConfig.isPackagedApp else { return }
@@ -73,6 +85,7 @@ final class UpdateManager: ObservableObject {
         do {
             _ = try await CheckinClient.send(request)
             DeviceID.reset()
+            store.config.licenseEmail = ""
             status = "Your data was erased from the server."
         } catch {
             status = "Couldn't erase your data: \(error.localizedDescription)"

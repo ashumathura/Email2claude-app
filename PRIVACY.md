@@ -22,16 +22,22 @@ About once a week, and when it opens, the app contacts a server hosted with Supa
 | App version, macOS version, language | Stored | Sent, not stored |
 | IP address, and the country and city it points to | Stored | Not stored |
 | License key | Stored | Sent to check it, not stored |
+| Email address, if you ask the app for a free license key | Stored with the key | Stored with the key |
 
 - **Why:** to check for updates and your license, to offer a compatible update, and (with your consent)
   to understand how the app is used and give support.
 - **Legal basis:** checking updates and your license, and the device ID and dates: needed to provide the
   service you licensed (and our legitimate interest in running it). Analytics: your consent, which you can
   withdraw at any time.
+- **Email address:** the app asks for it once, to issue a free license key (one per address). It is stored
+  with the key and the ID of the device that asked, only to issue and manage the license and to contact you
+  about it. It is stored whether or not you share analytics, it is never linked to your emails or prompts, and
+  the app works without it (you just get no updates). The key does not expire. [Add the legal basis: performance
+  of the license agreement, and legitimate interest in managing licenses; state the retention period.]
 - **Choice:** the app asks on first launch. Change it at any time in Settings → License & Privacy. Switching
   to "Don't share" removes the analytics fields from the server immediately.
 - **Erasure:** Settings → License & Privacy → Erase My Data on the Server deletes everything stored for your
-  install. You can also write to [contact email].
+  install and removes the email address from your license (the key itself stays valid). You can also write to [contact email].
 - **Processors:** Supabase (hosting, EU region) and ipinfo.io (looks up country and city from your IP address).
 - **Retention:** [decide, for example: analytics fields are deleted after 24 months of inactivity].
 - **Your rights:** access, correction, erasure, restriction, portability, objection, and complaint to your

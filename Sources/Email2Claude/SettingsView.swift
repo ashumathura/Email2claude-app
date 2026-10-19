@@ -620,6 +620,9 @@ private struct AccountTab: View {
     @ObservedObject var store: ConfigStore
     @ObservedObject var updates: UpdateManager
     @State private var confirmErase = false
+    @State private var email = ""
+    @State private var registering = false
+    @State private var registerError: String?
 
     private var choice: Binding<AnalyticsChoice> {
         Binding(
@@ -637,10 +640,15 @@ private struct AccountTab: View {
 
     var body: some View {
         Form {
+            if store.config.licenseKey.trimmingCharacters(in: .whitespaces).isEmpty { getKeySection }
+
             Section {
                 TextField("License key", text: $store.config.licenseKey, prompt: Text("EMC-XXXXX-XXXXX-XXXXX-XXXXX"))
                     .font(.system(.body, design: .monospaced))
                     .onChange(of: store.config.licenseKey) { _ in updates.licenseKeyEdited() }
+                if !store.config.licenseEmail.isEmpty {
+                    LabeledContent("Issued to", value: store.config.licenseEmail)
+                }
                 LabeledContent("Status") { licenseStatus }
             } header: {
                 Text("License")
@@ -700,7 +708,38 @@ private struct AccountTab: View {
             Button("Erase", role: .destructive) { Task { await updates.erase() } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This deletes everything stored about this install, including your device ID, and starts a new one. Your license key stays valid.")
+            Text("This deletes everything stored about this install, including your device ID and the email address linked to your license, and starts a new device ID. Your license key itself stays valid.")
+        }
+    }
+
+    private var getKeySection: some View {
+        Section {
+            HStack {
+                TextField("Email address", text: $email, prompt: Text("you@example.com"))
+                    .disabled(registering)
+                    .onSubmit(getKey)
+                Button("Get Free License Key", action: getKey)
+                    .disabled(!EmailAddress.isPlausible(email) || registering)
+                if registering { ProgressView().controlSize(.small) }
+            }
+            if let registerError {
+                Label(registerError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout).foregroundStyle(.orange)
+            }
+        } header: {
+            Text("Get a free license key")
+        } footer: {
+            Text(PrivacyText.emailNote)
+        }
+    }
+
+    private func getKey() {
+        guard EmailAddress.isPlausible(email), !registering else { return }
+        registering = true
+        registerError = nil
+        Task {
+            do { try await updates.registerLicense(email: email) } catch { registerError = error.localizedDescription }
+            registering = false
         }
     }
 
