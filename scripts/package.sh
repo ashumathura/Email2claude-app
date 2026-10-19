@@ -23,10 +23,41 @@ sign() {
     fi
 }
 
+# Submits once, then polls for the verdict. Polling (instead of `notarytool --wait`) means a
+# dropped network connection during Apple's queue is retried rather than failing the whole build.
+# Gives up after NOTARIZE_TIMEOUT_MIN minutes (default 120).
 notarize() {
     [ -n "${APPLE_ID:-}" ] && [ "$IDENTITY" != "-" ] || return 0
-    xcrun notarytool submit "$1" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
-        --password "$APPLE_APP_PASSWORD" --wait
+    local creds=(--apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD")
+    local id="" out try
+    for try in 1 2 3 4 5; do
+        if out=$(xcrun notarytool submit "$1" "${creds[@]}" --output-format plist); then
+            id=$(printf '%s' "$out" | plutil -extract id raw -o - -)
+            break
+        fi
+        echo "Submit attempt $try failed; retrying"; sleep 15
+    done
+    [ -n "$id" ] || { echo "Could not submit $1 for notarization"; exit 1; }
+    echo "Submitted $1 for notarization: $id"
+
+    local deadline=$((SECONDS + ${NOTARIZE_TIMEOUT_MIN:-120} * 60)) status
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if out=$(xcrun notarytool info "$id" "${creds[@]}" --output-format plist 2>/dev/null); then
+            status=$(printf '%s' "$out" | plutil -extract status raw -o - - 2>/dev/null || echo unknown)
+            echo "Notarization status: $status"
+            case "$status" in
+                Accepted) return 0 ;;
+                Invalid|Rejected)
+                    xcrun notarytool log "$id" "${creds[@]}" || true
+                    exit 1 ;;
+            esac
+        else
+            echo "Status check failed (network?); will retry"
+        fi
+        sleep 30
+    done
+    echo "Notarization of $1 not finished after ${NOTARIZE_TIMEOUT_MIN:-120} minutes (submission $id)"
+    exit 1
 }
 
 swift build -c release --arch arm64
