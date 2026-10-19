@@ -40,12 +40,11 @@ enum ClaudeBridge {
     static func reveal(_ target: ChatTarget) async throws {
         switch target {
         case .newChat, .incognito: return
-        case .sidebar, .project: guard accessibilityGranted(prompt: true) else { throw ClaudeError.noAccessibility }
+        case .sidebar, .project:
+            if target.webURL == nil { guard accessibilityGranted(prompt: true) else { throw ClaudeError.noAccessibility } }
         case .link: break
         }
-        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: ClaudeSidebar.bundleID)
-        else { throw ClaudeError.notInstalled }
-        try await openChat(target, appURL: appURL)
+        try await openChat(target, appURL: NSWorkspace.shared.urlForApplication(withBundleIdentifier: ClaudeSidebar.bundleID))
     }
 
     /// - Parameters:
@@ -55,8 +54,10 @@ enum ClaudeBridge {
         _ email: Email, to target: ChatTarget, instruction: String, sendAutomatically: Bool, config: Config
     ) async throws {
         guard accessibilityGranted(prompt: true) else { throw ClaudeError.noAccessibility }
-        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: ClaudeSidebar.bundleID)
-        else { throw ClaudeError.notInstalled }
+        let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: ClaudeSidebar.bundleID)
+        // Web links go to the default browser, so the Claude app isn't needed for them.
+        let web = target.webURL != nil
+        if appURL == nil && !web { throw ClaudeError.notInstalled }
 
         let saved = PasteboardSnapshot.capture()
         defer { saved.restore() }
@@ -69,12 +70,12 @@ enum ClaudeBridge {
         await waitForModifiersReleased()
         try await openChat(target, appURL: appURL)
         lap("open chat")
-        await waitForInputReady(minimumDelay: minimumLoadDelay(for: target, config: config))
+        await waitForInputReady(minimumDelay: minimumLoadDelay(for: target, config: config), pollInput: !web)
         lap("wait for input")
 
         let text = email.prompt(instruction: instruction)
         paste(string: text)
-        await waitForPasteToSettle(characters: text.count)
+        await waitForPasteToSettle(characters: text.count, pollInput: !web)
         lap("paste \(text.count) chars")
 
         for path in email.attachmentPaths {
@@ -92,9 +93,14 @@ enum ClaudeBridge {
 
     // MARK: - Opening the destination
 
-    private static func openChat(_ target: ChatTarget, appURL: URL) async throws {
+    private static func openChat(_ target: ChatTarget, appURL: URL?) async throws {
         let activation = NSWorkspace.OpenConfiguration()
         activation.activates = true
+        if let web = target.webURL {
+            _ = try await NSWorkspace.shared.open(web, configuration: activation)
+            return
+        }
+        guard let appURL else { throw ClaudeError.notInstalled }
         switch target {
         case .link(let url):
             _ = try await NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: activation)
@@ -132,13 +138,16 @@ enum ClaudeBridge {
     /// Navigating to a link, project or sidebar row needs time to load; a new chat does not.
     private static func minimumLoadDelay(for target: ChatTarget, config: Config) -> Double {
         if case .newChat = target { return 0.3 }
+        // A web page needs longer than the desktop app, and its input can't be inspected to tell when it is ready.
+        if target.webURL != nil { return max(config.openDelay, 3.0) }
         return config.openDelay
     }
 
     /// Waits for the minimum load time, then until a text input has focus (up to 3 s more).
     /// The minimum matters: while a chat is still loading, the previous chat's input can have focus.
-    private static func waitForInputReady(minimumDelay: Double) async {
+    private static func waitForInputReady(minimumDelay: Double, pollInput: Bool) async {
         try? await Task.sleep(for: .seconds(minimumDelay))
+        guard pollInput else { return }
         let deadline = Date().addingTimeInterval(3)
         while Date() < deadline, ClaudeSidebar.focusedInputLength() == nil {
             try? await Task.sleep(for: .milliseconds(100))
@@ -147,8 +156,8 @@ enum ClaudeBridge {
 
     /// Large pastes take a while to render. Polls the input's length until it stops changing;
     /// if the accessibility tree isn't readable, falls back to a delay that scales with the text.
-    private static func waitForPasteToSettle(characters: Int) async {
-        guard ClaudeSidebar.focusedInputLength() != nil else {
+    private static func waitForPasteToSettle(characters: Int, pollInput: Bool) async {
+        guard pollInput, ClaudeSidebar.focusedInputLength() != nil else {
             try? await Task.sleep(for: .milliseconds(min(2000, 300 + characters / 30)))
             return
         }

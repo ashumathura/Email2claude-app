@@ -109,7 +109,7 @@ struct RouteEditorView: View {
 
     private var draft: Route {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
-        let trimmedURL = url.trimmingCharacters(in: .whitespaces)
+        let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedInstructions = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
         let usesDetails = kind == .chat || kind == .project
         return Route(
@@ -120,7 +120,7 @@ struct RouteEditorView: View {
     }
 
     private var linkIsValid: Bool {
-        let trimmed = url.trimmingCharacters(in: .whitespaces)
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty || ChatLink.appURL(from: trimmed) != nil
     }
 
@@ -299,11 +299,13 @@ struct RouteEditorView: View {
 
     private func linkField(placeholder: String, label: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            TextField(label, text: $url, prompt: Text(placeholder + " (optional)"))
+            TextField(label, text: $url, prompt: Text(placeholder + " (optional)"), axis: .vertical)
+                .lineLimit(2...5)
             if !linkIsValid {
-                Text("That doesn't look like a claude.ai link.").font(.caption).foregroundStyle(.red)
-            } else if url.trimmingCharacters(in: .whitespaces).isEmpty {
-                Text("A link is the most reliable way to find it.").font(.caption).foregroundStyle(.secondary)
+                Text("That doesn't look like a web link. It should start with https://").font(.caption).foregroundStyle(.red)
+            } else if url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("A link is the most reliable way to find it. Links to claude.ai open in the Claude app; any other web link opens in your browser.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }

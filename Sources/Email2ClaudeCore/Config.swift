@@ -21,6 +21,16 @@ public enum ChatTarget: Equatable {
     case project(name: String, link: URL?)
     case newChat
     case incognito
+
+    /// Set when the destination is an ordinary web address (not claude.ai or claude://), such as another
+    /// chat service. It opens in the default browser instead of the Claude desktop app.
+    public var webURL: URL? {
+        switch self {
+        case .link(let url): return ChatLink.isWebLink(url) ? url : nil
+        case .project(_, let link): return link.flatMap { ChatLink.isWebLink($0) ? $0 : nil }
+        default: return nil
+        }
+    }
 }
 
 /// Which part of an email a route looks at.
@@ -44,7 +54,8 @@ public struct Route: Codable, Equatable, Identifiable {
     public var kind: DestinationKind
     /// Chat title (kind .chat) or project name (kind .project).
     public var name: String?
-    /// A claude.ai or claude:// link to the chat or project. Preferred over the name when present.
+    /// A link to the chat or project: claude.ai or claude:// for the Claude app, or any other web address,
+    /// which opens in the default browser. Preferred over the name when present.
     public var url: String?
     /// Standing instructions added to the prompt whenever this route is used, for example
     /// "Always reply formally, in Dutch."
