@@ -63,9 +63,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // A free license key needs an email address: ask once, right after the privacy choice.
         if BackendConfig.isPackagedApp && store.config.licenseKey.isEmpty && !store.config.emailPromptShown {
-            EmailSignup.run(updates: updates)
-            store.config.emailPromptShown = true
+            EmailSignup.show(updates: updates) { [weak self] in
+                self?.store.config.emailPromptShown = true
+                self?.finishStartup()
+            }
+        } else {
+            finishStartup()
         }
+    }
+
+    private func finishStartup() {
         _ = ClaudeBridge.accessibilityGranted(prompt: true)
         updates.start()
     }

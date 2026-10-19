@@ -88,7 +88,17 @@ struct EmailSignupView: View {
                 try await register(email)
                 onDone()
             } catch {
+                Log.write("license sign-up failed: \(error.localizedDescription)")
                 errorText = error.localizedDescription
+                working = false
+            }
+        }
+        // Never leave the screen spinning: if nothing came back, say so and let the user try again or skip.
+        Task {
+            try? await Task.sleep(for: .seconds(25))
+            if working {
+                Log.write("license sign-up: no answer after 25 s")
+                errorText = "The server didn't answer. Check your internet connection and try again, or skip for now and get a key later in Settings."
                 working = false
             }
         }
@@ -97,19 +107,26 @@ struct EmailSignupView: View {
 
 @MainActor
 enum EmailSignup {
-    /// Blocks until a key was issued or the user skips.
-    static func run(updates: UpdateManager) {
+    private static var window: NSWindow?
+
+    /// Shows the screen as an ordinary window (not a blocking modal, whose run loop can starve the
+    /// network request) and calls `onClose` once a key was issued or the user skipped.
+    static func show(updates: UpdateManager, onClose: @escaping () -> Void) {
         let view = EmailSignupView(
             register: { try await updates.registerLicense(email: $0) },
-            onDone: { NSApp.stopModal() })
-        let window = NSWindow(contentViewController: NSHostingController(rootView: view))
-        window.styleMask = [.titled]
-        window.title = "MailtoChat"
-        window.isReleasedWhenClosed = false
-        window.level = .floating
-        window.center()
+            onDone: {
+                window?.orderOut(nil)
+                window = nil
+                onClose()
+            })
+        let panel = NSWindow(contentViewController: NSHostingController(rootView: view))
+        panel.styleMask = [.titled]
+        panel.title = "MailtoChat"
+        panel.isReleasedWhenClosed = false
+        panel.level = .floating
+        panel.center()
+        window = panel
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.runModal(for: window)
-        window.orderOut(nil)
+        panel.makeKeyAndOrderFront(nil)
     }
 }
