@@ -125,6 +125,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         update.target = self
         let settings = menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self
+        let donate = menu.addItem(withTitle: "Support the App…", action: #selector(showDonate), keyEquivalent: "")
+        donate.image = icon("heart")
+        donate.target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit eMail to Claude", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
@@ -136,6 +139,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func checkForUpdates() { updates.checkNow() }
+
+    @objc private func showDonate() { Donate.showDialog() }
 
     @objc private func showSettings() {
         if settingsWindow == nil { settingsWindow = SettingsWindowController(store: store, activity: activity, updates: updates) }
