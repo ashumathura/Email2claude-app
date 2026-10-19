@@ -71,17 +71,20 @@ jobs:
           PUBLISH: ${{ inputs.publish }}
         run: |
           [ -n "$SERVICE_KEY" ] || { echo "SUPABASE_SERVICE_ROLE_KEY secret is missing"; exit 1; }
+          # Legacy JWT keys also go in Authorization; newer sb_secret_ keys must not.
+          AUTH=()
+          case "$SERVICE_KEY" in eyJ*) AUTH=(-H "Authorization: Bearer $SERVICE_KEY") ;; esac
           FILE=dist/eMail-to-Claude.dmg
           SHA=$(shasum -a 256 "$FILE" | cut -d' ' -f1)
           OBJECT="$VERSION/eMail-to-Claude.dmg"
           curl -fsS -X POST "$SUPABASE_URL/storage/v1/object/releases/$OBJECT" \
-            -H "Authorization: Bearer $SERVICE_KEY" -H "apikey: $SERVICE_KEY" \
+            -H "apikey: $SERVICE_KEY" "${AUTH[@]}" \
             -H "Content-Type: application/x-apple-diskimage" -H "x-upsert: true" \
             --data-binary @"$FILE" > /dev/null
           BODY=$(jq -n --arg v "$VERSION" --arg p "$OBJECT" --arg s "$SHA" --arg n "$NOTES" --arg pub "$PUBLISH" \
             '{version: $v, dmg_path: $p, sha256: $s, notes: $n, published: ($pub == "true")}')
           curl -fsS -X POST "$SUPABASE_URL/rest/v1/releases?on_conflict=version" \
-            -H "Authorization: Bearer $SERVICE_KEY" -H "apikey: $SERVICE_KEY" \
+            -H "apikey: $SERVICE_KEY" "${AUTH[@]}" \
             -H "Content-Type: application/json" -H "Prefer: resolution=merge-duplicates" \
             -d "$BODY" > /dev/null
           echo "Uploaded $OBJECT (sha256 $SHA), published=$PUBLISH"
