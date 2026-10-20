@@ -13,16 +13,16 @@ enum ChooserResult {
 @MainActor
 enum RouteChooser {
     /// - Parameter previewPrompt: the action prompt the preview shows the route prompt being added to.
-    static func ask(suggestion: Router.RouteSuggestion, previewPrompt: String) -> ChooserResult {
+    /// - Parameter email: the email being sent, shown at the top so it is clear what is being routed.
+    static func ask(email: Email, suggestion: Router.RouteSuggestion, previewPrompt: String) -> ChooserResult {
         var result = ChooserResult.cancel
         let address = suggestion.address(for: suggestion.field) ?? ""
         let domain = Router.domain(of: address) ?? address
-        let subtitle = suggestion.field == .from
-            ? "There's no Claude destination yet for mail received from \(address). Choose one and MailtoChat will remember it."
-            : "There's no Claude destination yet for mail sent to \(address). Choose one and MailtoChat will remember it."
+        let subject = email.subject.isEmpty ? "(no subject)" : email.subject
+        let subtitle = "\(email.sender)\n“\(subject)”\nThere's no route for it yet. Choose what should happen."
 
         let view = RouteEditorView(
-            title: "No route for this email yet",
+            title: "Where should this email go?",
             subtitle: subtitle,
             initial: Route(domain: domain, matchOn: suggestion.field, kind: .newChat),
             suggestions: suggestion,

@@ -34,8 +34,11 @@ Each route sends to an **existing chat**, a **new chat in a project**, a **new c
 and can carry a **route prompt** (for example "Always reply formally, in Dutch.") that is added to the prompt after the
 action's own prompt. Actions set to paste only add no prompt, so they are not affected. The route editor previews exactly what Claude receives.
 
-If an email matches no route, a window asks where it should go (save it, use it once, or "don't ask again, always
-start a new chat", reversible in Settings → Routes). For mail you received it offers the sender; for mail you sent, the recipient.
+If an email matches no route, a window asks what should happen with it, as three options (the first is selected):
+**send this one email** (nothing is saved, the next similar email asks again), **send it and remember** (saves a
+route for the sender or recipient, which can be changed under "Applies to"), or **always use a new chat and stop asking**
+(this email and every later one without a route start a new chat; reversible in Settings → Routes). For mail you
+received it offers the sender; for mail you sent, the recipient. The window shows the sender and subject.
 
 ## Activity log
 

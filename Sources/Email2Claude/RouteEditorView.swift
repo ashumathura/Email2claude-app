@@ -57,7 +57,40 @@ struct RouteEditorView: View {
     @State private var isRefreshing = false
     /// Not in the picker, so the project name is typed.
     @State private var typingProjectName: Bool
-    @State private var neverAsk = false
+    /// When an email has no route yet: what should happen with it.
+    @State private var outcome: Outcome = .once
+    @State private var showsAppliesTo = false
+
+    /// The three things that can happen with an email that has no route.
+    private enum Outcome: String, CaseIterable, Identifiable {
+        case once, save, never
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .once: return "Send this one email"
+            case .save: return "Send it, and remember for next time"
+            case .never: return "Always use a new chat, and stop asking"
+            }
+        }
+
+        var detail: String {
+            switch self {
+            case .once: return "Nothing is saved. The next similar email asks again."
+            case .save: return "Saves a route, so similar emails go there without asking."
+            case .never: return "Emails with no route skip this window and start a new chat."
+            }
+        }
+
+        var button: String {
+            switch self {
+            case .once: return "Send"
+            case .save: return "Send and save route"
+            case .never: return "Send to a New Chat"
+            }
+        }
+    }
 
     init(
         title: String, subtitle: String, initial: Route, suggestions: Router.RouteSuggestion? = nil,
@@ -91,6 +124,7 @@ struct RouteEditorView: View {
         _chatsProblem = State(initialValue: loaded.problem)
         _chatsLoadedAt = State(initialValue: loaded.date)
         let savedProject = (initial.name ?? "").trimmingCharacters(in: .whitespaces)
+        _showsAppliesTo = State(initialValue: text.isEmpty)
         _typingProjectName = State(
             initialValue: initial.kind == .project && (loaded.list.projects.isEmpty
                 || (!savedProject.isEmpty && !loaded.list.projects.contains(savedProject))))
@@ -136,11 +170,26 @@ struct RouteEditorView: View {
         return trimmed.isEmpty || ChatLink.appURL(from: trimmed) != nil
     }
 
-    private var isValid: Bool {
-        guard !ruleValue.isEmpty, ruleError == nil, linkIsValid else { return false }
+    /// The destination is complete: a link that parses, and a chat or project when one is needed.
+    private var destinationValid: Bool {
+        guard linkIsValid else { return false }
         switch kind {
         case .chat, .project: return draft.name != nil || draft.url != nil
         case .newChat, .incognito: return true
+        }
+    }
+
+    private var isValid: Bool {
+        !ruleValue.isEmpty && ruleError == nil && destinationValid
+    }
+
+    /// Whether the main button can be pressed. Only saving needs a rule.
+    private var canSubmit: Bool {
+        guard offersOnce else { return isValid }
+        switch outcome {
+        case .once: return destinationValid
+        case .save: return isValid
+        case .never: return true
         }
     }
 
@@ -213,84 +262,30 @@ struct RouteEditorView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            if offersOnce { outcomePicker }
             Form {
-                Section {
-                    Picker("Email field", selection: $field) {
-                        ForEach(MatchField.allCases) { option in
-                            Text(option == .to ? "Sent to (To)" : "Received from (From)").tag(option)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    Picker("Match", selection: $matchType) {
-                        Text("Anyone at a domain").tag(MatchType.domain)
-                        Text("One email address").tag(MatchType.address)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    TextField(
-                        matchType == .domain ? "Domain" : "Email address", text: $matchText,
-                        prompt: Text(matchType == .domain ? "company.com" : "name@company.com"))
-                    if let ruleError {
-                        Text(ruleError).font(.caption).foregroundStyle(.red)
-                    }
-                } header: {
-                    Text("When an email is…")
-                } footer: {
-                    Text((field == .to
-                          ? "To looks at who the email was sent to. "
-                          : "From looks at who the email came from, which is what you want for mail you receive. ")
-                         + (matchType == .domain
-                            ? "A domain covers everyone there, subdomains too."
-                            : "One address takes priority over a domain rule. To cover both directions with a client, add one From route and one To route."))
-                }
-                .disabled(neverAsk)
-
-                Section {
-                    Picker("Send it to", selection: $kind) {
-                        ForEach(DestinationKind.allCases) { option in
-                            Label(option.title, systemImage: option.symbol).tag(option)
-                        }
-                    }
-                    details
-                } header: {
-                    Text("…put it in Claude")
-                } footer: {
-                    Text(kind.summary)
-                }
-                .disabled(neverAsk)
-
-                Section {
-                    TextEditor(text: $instructions)
-                        .font(.body)
-                        .frame(minHeight: 60)
-                    DisclosureGroup("Preview what Claude receives") {
-                        Text(preview)
-                            .font(.system(.caption, design: .monospaced))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                    }
-                } header: {
-                    Text("Route prompt (optional)")
-                } footer: {
-                    Text("Added after the action's prompt every time an email uses this route, so one action can behave differently per sender or domain. Example: “Always reply formally, in Dutch.” Actions set to paste only don't use it.")
-                }
-                .disabled(neverAsk)
-
-                if !neverAsk {
-                    Section {
-                        Text("Emails **\(field.phrase)** **\(whoPhrase)** go to: **\(draft.destinationDescription)**")
-                    } header: {
-                        Text("Result")
-                    }
-                }
-
                 if offersOnce {
-                    Section {
-                        Toggle("Don't ask again. Always start a new chat when no route matches.", isOn: $neverAsk)
-                    } footer: {
-                        Text("You can turn asking back on in Settings → Routes.")
+                    switch outcome {
+                    case .once:
+                        destinationSection
+                        promptSection
+                    case .save:
+                        appliesToSection
+                        destinationSection
+                        promptSection
+                        resultSection
+                    case .never:
+                        Section {
+                            Text("From now on, emails that have no route skip this window and start a new chat in Claude. This email goes to a new chat too.")
+                            Text("You can turn asking back on in Settings → Routes.")
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                } else {
+                    matchSection
+                    destinationSection
+                    promptSection
+                    resultSection
                 }
             }
             .formStyle(.grouped)
@@ -301,6 +296,143 @@ struct RouteEditorView: View {
         }
         .frame(width: 560, height: min(740, (NSScreen.main?.visibleFrame.height ?? 800) - 60))
         .tint(Brand.accent)
+    }
+
+    // MARK: Sections
+
+    /// The choice that comes first for an email with no route: what should happen with it.
+    private var outcomePicker: some View {
+        VStack(spacing: 8) {
+            ForEach(Outcome.allCases) { option in
+                let selected = outcome == option
+                Button { outcome = option } label: {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                            .foregroundStyle(selected ? Brand.accent : Color.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(option.title).font(.body.weight(.semibold))
+                            Text(option.detail).font(.callout).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        selected ? Brand.accent.opacity(0.10) : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(selected ? Brand.accent : Color.secondary.opacity(0.3)))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 6)
+        .padding(.bottom, 4)
+    }
+
+    /// The rule fields, as they appear when a route is edited in Settings.
+    private var matchSection: some View {
+        Section {
+            matchControls
+        } header: {
+            Text("When an email is…")
+        } footer: {
+            matchFooter
+        }
+    }
+
+    /// The same fields for a new route saved from an email: one line, with the controls behind it.
+    private var appliesToSection: some View {
+        Section {
+            DisclosureGroup(isExpanded: $showsAppliesTo) {
+                matchControls
+                matchFooter
+            } label: {
+                Text("Applies to: mail **\(field.phrase)** **\(whoPhrase)**")
+            }
+        } header: {
+            Text("Remember it for")
+        }
+    }
+
+    @ViewBuilder private var matchControls: some View {
+        Picker("Email field", selection: $field) {
+            ForEach(MatchField.allCases) { option in
+                Text(option == .to ? "Sent to (To)" : "Received from (From)").tag(option)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        Picker("Match", selection: $matchType) {
+            Text("Anyone at a domain").tag(MatchType.domain)
+            Text("One email address").tag(MatchType.address)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        TextField(
+            matchType == .domain ? "Domain" : "Email address", text: $matchText,
+            prompt: Text(matchType == .domain ? "company.com" : "name@company.com"))
+        if let ruleError {
+            Text(ruleError).font(.caption).foregroundStyle(.red)
+        }
+    }
+
+    private var matchFooter: some View {
+        Text((field == .to
+              ? "To looks at who the email was sent to. "
+              : "From looks at who the email came from, which is what you want for mail you receive. ")
+             + (matchType == .domain
+                ? "A domain covers everyone there, subdomains too."
+                : "One address takes priority over a domain rule. To cover both directions with a client, add one From route and one To route."))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+
+    private var destinationSection: some View {
+        Section {
+            Picker("Send it to", selection: $kind) {
+                ForEach(DestinationKind.allCases) { option in
+                    Label(option.title, systemImage: option.symbol).tag(option)
+                }
+            }
+            details
+        } header: {
+            Text(offersOnce ? "Where should it go?" : "…put it in Claude")
+        } footer: {
+            Text(kind.summary)
+        }
+    }
+
+    private var promptSection: some View {
+        Section {
+            TextEditor(text: $instructions)
+                .font(.body)
+                .frame(minHeight: 60)
+            DisclosureGroup("Preview what Claude receives") {
+                Text(preview)
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+        } header: {
+            Text("Route prompt (optional)")
+        } footer: {
+            Text(offersOnce && outcome == .once
+                 ? "Added after the action's prompt for this email only. Actions set to paste only don't use it."
+                 : "Added after the action's prompt every time an email uses this route, so one action can behave differently per sender or domain. Example: “Always reply formally, in Dutch.” Actions set to paste only don't use it.")
+        }
+    }
+
+    private var resultSection: some View {
+        Section {
+            Text("Emails **\(field.phrase)** **\(whoPhrase)** go to: **\(draft.destinationDescription)**")
+        } header: {
+            Text("Result")
+        }
     }
 
     private var header: some View {
@@ -411,21 +543,22 @@ struct RouteEditorView: View {
         HStack(spacing: 10) {
             Spacer()
             Button("Cancel", action: onCancel).keyboardShortcut(.cancelAction)
-            if neverAsk, let onNeverAsk {
-                Button("Always Use a New Chat", action: onNeverAsk)
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-            } else {
-                if offersOnce, let onOnce {
-                    Button("Just This Once") { onOnce(draft) }.disabled(!isValid)
-                }
-                Button("Save") { onSave(draft) }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!isValid)
-            }
+            Button(offersOnce ? outcome.button : "Save", action: submit)
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(!canSubmit)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
     }
+
+    private func submit() {
+        guard offersOnce else { return onSave(draft) }
+        switch outcome {
+        case .once: onOnce?(draft)
+        case .save: onSave(draft)
+        case .never: onNeverAsk?()
+        }
+    }
+
 }
