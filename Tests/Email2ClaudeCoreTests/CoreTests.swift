@@ -487,6 +487,19 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(Route(domain: "a.com", kind: .incognito).destinationChip, "Incognito chat")
     }
 
+    func testDomainsWithoutFromRoute() {
+        var config = Config()
+        config.routes = [
+            Route(domain: "a.com", matchOn: .to, kind: .chat, name: "A"),
+            Route(domain: "b.com", matchOn: .to, kind: .newChat),
+            Route(domain: "sub.c.com", matchOn: .to, kind: .newChat),
+            Route(domain: "jane@d.com", matchOn: .to, kind: .newChat),
+            Route(domain: "b.com", matchOn: .from, kind: .newChat),
+            Route(domain: "c.com", matchOn: .from, kind: .newChat),
+        ]
+        XCTAssertEqual(config.domainsWithoutFromRoute, ["a.com"])
+    }
+
     func testLicenseKeyIsMaskedExceptItsLastGroup() {
         XCTAssertEqual(LicenseKey.masked("EMC-ABCDE-FGHJK-LMNPQ-RSTUV"), "EMC-••••-••••-••••-RSTUV")
         XCTAssertEqual(LicenseKey.masked(" EMC-ABCDE-FGHJK-LMNPQ-RSTUV \n"), "EMC-••••-••••-••••-RSTUV")

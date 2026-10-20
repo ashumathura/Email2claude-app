@@ -11,7 +11,7 @@ enum CheckinClient {
             switch code {
             case "bad_email": return "That doesn't look like a valid email address."
             case "already_registered":
-                return "A license key has already been issued for this email address. Enter that key in Settings → License & Privacy, or contact the developer if you've lost it."
+                return "A license key has already been issued for this email address. Enter that key in Settings → License, or contact the developer if you've lost it."
             default: return "The server answered with status \(status)."
             }
         }

@@ -82,7 +82,7 @@ jobs:
             -H "Content-Type: application/x-apple-diskimage" -H "x-upsert: true" \
             --data-binary @"$FILE" > /dev/null
           BODY=$(jq -n --arg v "$VERSION" --arg p "$OBJECT" --arg s "$SHA" --arg n "$NOTES" --arg pub "$PUBLISH" \
-            '{version: $v, dmg_path: $p, sha256: $s, notes: $n, published: ($pub == "true")}')
+            '{version: $v, dmg_path: $p, sha256: $s, notes: $n, min_macos: "14.0", published: ($pub == "true")}')
           curl -fsS -X POST "$SUPABASE_URL/rest/v1/releases?on_conflict=version" \
             -H "apikey: $SERVICE_KEY" "${AUTH[@]}" \
             -H "Content-Type: application/json" -H "Prefer: resolution=merge-duplicates" \

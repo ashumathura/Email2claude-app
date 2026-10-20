@@ -312,31 +312,10 @@ struct RouteEditorView: View {
 
     /// The choice that comes first for an email with no route: what should happen with it.
     private var outcomePicker: some View {
-        VStack(spacing: 8) {
-            ForEach(Outcome.allCases) { option in
-                let selected = outcome == option
-                Button { outcome = option } label: {
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: selected ? "largecircle.fill.circle" : "circle")
-                            .foregroundStyle(selected ? Brand.accent : Color.secondary)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(option.title).font(.body.weight(.semibold))
-                            Text(option.detail).font(.callout).foregroundStyle(.secondary)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        selected ? Brand.accent.opacity(0.10) : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(selected ? Brand.accent : Color.secondary.opacity(0.3)))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selected ? .isSelected : [])
+        FormSection {
+            ForEach(Array(Outcome.allCases.enumerated()), id: \.element) { index, option in
+                if index > 0 { RowDivider() }
+                RadioRow(title: option.title, detail: option.detail, selected: outcome == option) { outcome = option }
             }
         }
         .padding(.horizontal, 24)
@@ -344,131 +323,120 @@ struct RouteEditorView: View {
         .padding(.bottom, 4)
     }
 
-    /// A heading with its content in a card.
-    private func titledCard<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.headline)
-            Card {
-                VStack(alignment: .leading, spacing: 10) { content() }
-            }
-        }
-    }
-
     /// The rule fields, as they appear when a route is edited in Settings.
     private var matchSection: some View {
-        titledCard("When an email is…") {
-            matchControls
-            matchFooter
+        VStack(alignment: .leading, spacing: 6) {
+            FormSection("When an email is…", note: matchFooter) { matchRows }
+            ruleErrorText
         }
     }
 
-    /// The same fields for a new route saved from an email: one line, with the controls behind it.
+    /// The same fields for a new route saved from an email: one line, with the rows behind it.
     private var appliesToSection: some View {
-        titledCard("Remember it for") {
-            DisclosureGroup(isExpanded: $showsAppliesTo) {
-                VStack(alignment: .leading, spacing: 10) {
-                    matchControls
-                    matchFooter
+        FormSection("Remember it for") {
+            Button { withAnimation(.easeOut(duration: 0.15)) { showsAppliesTo.toggle() } } label: {
+                HStack {
+                    Text("Applies to: mail **\(field.phrase)** **\(whoPhrase)**")
+                    Spacer(minLength: 8)
+                    Image(systemName: showsAppliesTo ? "chevron.down" : "chevron.right").foregroundStyle(.secondary)
                 }
-                .padding(.top, 8)
-            } label: {
-                Text("Applies to: mail **\(field.phrase)** **\(whoPhrase)**")
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if showsAppliesTo {
+                RowDivider()
+                matchRows
             }
         }
     }
 
-    @ViewBuilder private var matchControls: some View {
-        Picker("Email field", selection: $field) {
-            ForEach(MatchField.allCases) { option in
-                Text(option == .to ? "Sent to (To)" : "Received from (From)").tag(option)
+    @ViewBuilder private var matchRows: some View {
+        FormRow("Direction") {
+            Picker("Email field", selection: $field) {
+                Text("Sent to").tag(MatchField.to)
+                Text("Received from").tag(MatchField.from)
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        Picker("Match", selection: $matchType) {
-            Text("Anyone at a domain").tag(MatchType.domain)
-            Text("One email address").tag(MatchType.address)
+        RowDivider()
+        FormRow("Applies to") {
+            Picker("Match", selection: $matchType) {
+                Text("Anyone at a domain").tag(MatchType.domain)
+                Text("One address").tag(MatchType.address)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        fieldLabel(matchType == .domain ? "Domain" : "Email address")
-        TextField(
-            "", text: $matchText,
-            prompt: Text(matchType == .domain ? "company.com" : "name@company.com"))
-            .textFieldStyle(.roundedBorder)
+        RowDivider()
+        FormRow(matchType == .domain ? "Domain" : "Email address") {
+            TextField(
+                "", text: $matchText,
+                prompt: Text(matchType == .domain ? "company.com" : "name@company.com"))
+                .textFieldStyle(.plain)
+                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: 280)
+        }
+    }
+
+    @ViewBuilder private var ruleErrorText: some View {
         if let ruleError {
-            Text(ruleError).font(.caption).foregroundStyle(.red)
+            Text(ruleError).font(.caption).foregroundStyle(.red).padding(.horizontal, 2)
         }
     }
 
-    private func fieldLabel(_ text: String) -> some View {
-        Text(text).font(.callout.weight(.medium))
+    private var matchFooter: String {
+        (field == .to
+         ? "To looks at who the email was sent to. "
+         : "From looks at who the email came from, which is what you want for mail you receive. ")
+        + (matchType == .domain
+           ? "A domain covers everyone there, subdomains too."
+           : "One address takes priority over a domain rule. To cover both directions with a client, add one From route and one To route.")
     }
 
-    private var matchFooter: some View {
-        Text((field == .to
-              ? "To looks at who the email was sent to. "
-              : "From looks at who the email came from, which is what you want for mail you receive. ")
-             + (matchType == .domain
-                ? "A domain covers everyone there, subdomains too."
-                : "One address takes priority over a domain rule. To cover both directions with a client, add one From route and one To route."))
-            .font(.caption)
-            .foregroundStyle(.secondary)
-    }
-
-    /// The four places an email can go, as cards. The chosen one opens its own fields.
+    /// Where the email goes: a pop-up for the kind, then its own rows, then an optional link.
     private var destinationSection: some View {
-        titledCard(offersOnce ? "Where should it go?" : "…put it in Claude") {
-            VStack(spacing: 8) {
-                ForEach(DestinationKind.allCases) { option in
-                    let selected = kind == option
-                    VStack(alignment: .leading, spacing: 12) {
-                        Button { kind = option } label: {
-                            HStack(alignment: .top, spacing: 10) {
-                                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
-                                    .foregroundStyle(selected ? Brand.accent : Color.secondary)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(option.title).font(.body.weight(.semibold))
-                                    Text(option.summary).font(.callout).foregroundStyle(.secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                                Spacer(minLength: 0)
-                                if option == .chat { Chip(text: "Best for people", tint: .orange) }
-                            }
-                            .contentShape(Rectangle())
+        VStack(alignment: .leading, spacing: 16) {
+            FormSection(offersOnce ? "Where should it go?" : "…put it in Claude", note: kind.summary) {
+                FormRow("Send it to") {
+                    RowPicker(selection: $kind) {
+                        ForEach(DestinationKind.allCases) { option in
+                            Label(option.title, systemImage: option.symbol).tag(option)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(selected ? .isSelected : [])
-                        if selected { details }
                     }
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        selected ? Brand.accent.opacity(0.08) : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(selected ? Brand.accent : Look.border))
                 }
+                detailRows
+            }
+            if kind == .chat || kind == .project { refreshRow }
+            if kind == .chat {
+                linkSection(placeholder: "https://claude.ai/chat/…", label: "Or paste a chat link")
+            } else if kind == .project {
+                linkSection(placeholder: "https://claude.ai/project/…", label: "Or paste a project link")
             }
         }
     }
 
     private var promptSection: some View {
-        titledCard("Route prompt (optional)") {
-            TextEditor(text: $instructions)
-                .font(.body)
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 70)
-                .padding(6)
-                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Look.border))
-            Text(offersOnce && outcome == .once
-                 ? "Added after the action's prompt for this email only. Actions set to paste only don't use it."
-                 : "Added after the action's prompt every time an email uses this route, so one action can behave differently per sender or domain. Example: “Always reply formally, in Dutch.” Actions set to paste only don't use it.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        FormSection(
+            "Route prompt (optional)",
+            note: offersOnce && outcome == .once
+                ? "Added after the action's prompt for this email only. Actions set to paste only don't use it."
+                : "Added after the action's prompt every time an email uses this route, so one action can behave differently per sender or domain. Actions set to paste only don't use it.") {
+            ZStack(alignment: .topLeading) {
+                PromptEditor(text: $instructions)
+                if instructions.isEmpty {
+                    Text("For example: Always reply formally, in Dutch.")
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .allowsHitTesting(false)
+                }
+            }
+            RowDivider()
             DisclosureGroup("Preview what Claude receives") {
                 Text(preview)
                     .font(.system(.caption, design: .monospaced))
@@ -476,6 +444,8 @@ struct RouteEditorView: View {
                     .textSelection(.enabled)
                     .padding(.top, 6)
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
         }
     }
 
@@ -503,12 +473,13 @@ struct RouteEditorView: View {
         .padding(.bottom, 6)
     }
 
-    @ViewBuilder private var details: some View {
+    /// The rows that belong to the chosen kind: which chat, or which project.
+    @ViewBuilder private var detailRows: some View {
         switch kind {
         case .chat:
-            VStack(alignment: .leading, spacing: 8) {
-                fieldLabel("Chat")
-                Picker("Chat", selection: $name) {
+            RowDivider()
+            FormRow("Chat") {
+                RowPicker(selection: $name) {
                     Text(chatList.isEmpty ? "No chats found" : "Choose a chat…").tag("")
                     if let saved = savedChatNotListed {
                         Section("Saved on this route") { Text(saved).tag(saved) }
@@ -519,35 +490,35 @@ struct RouteEditorView: View {
                         }
                     }
                 }
-                .labelsHidden()
-                refreshRow(buttonTitle: "Refresh Chat List")
-                linkField(placeholder: "https://claude.ai/chat/…", label: "Or paste a chat link")
             }
         case .project:
-            VStack(alignment: .leading, spacing: 8) {
-                fieldLabel("Project")
-                if chatList.projects.isEmpty {
-                    TextField("", text: $name, prompt: Text("Exactly as shown in Claude"))
-                        .textFieldStyle(.roundedBorder)
-                } else {
-                    Picker("Project", selection: projectSelection) {
+            RowDivider()
+            if chatList.projects.isEmpty {
+                FormRow("Project") { projectNameField }
+            } else {
+                FormRow("Project") {
+                    RowPicker(selection: projectSelection) {
                         Text("Choose a project…").tag("")
                         ForEach(chatList.projects, id: \.self) { Text($0).tag($0) }
                         Divider()
                         Text("Other (type its name)…").tag(Self.otherProject)
                     }
-                    .labelsHidden()
-                    if showsTypedProjectName {
-                        TextField("", text: $name, prompt: Text("Exactly as shown in Claude"))
-                            .textFieldStyle(.roundedBorder)
-                    }
                 }
-                refreshRow(buttonTitle: "Refresh Project List")
-                linkField(placeholder: "https://claude.ai/project/…", label: "Or paste a project link")
+                if showsTypedProjectName {
+                    RowDivider()
+                    FormRow("Project name") { projectNameField }
+                }
             }
         case .newChat, .incognito:
             EmptyView()
         }
+    }
+
+    private var projectNameField: some View {
+        TextField("", text: $name, prompt: Text("Exactly as shown in Claude"))
+            .textFieldStyle(.plain)
+            .multilineTextAlignment(.trailing)
+            .frame(maxWidth: 280)
     }
 
     private static let otherProject = "\u{1}other"
@@ -572,11 +543,12 @@ struct RouteEditorView: View {
             })
     }
 
-    private func refreshRow(buttonTitle: String) -> some View {
+    private var refreshRow: some View {
         HStack(spacing: 8) {
             Button { refreshChats() } label: {
-                Label(buttonTitle, systemImage: "arrow.clockwise")
+                Label(kind == .project ? "Refresh project list" : "Refresh chat list", systemImage: "arrow.clockwise")
             }
+            .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(isRefreshing)
             if isRefreshing { ProgressView().controlSize(.small) }
@@ -586,18 +558,22 @@ struct RouteEditorView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
+        .padding(.horizontal, 2)
     }
 
-    private func linkField(placeholder: String, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            fieldLabel(label + " (most reliable)")
-            TextField("", text: $url, prompt: Text(placeholder + " (optional)"), axis: .vertical)
-                .lineLimit(2...5)
-                .textFieldStyle(.roundedBorder)
+    private func linkSection(placeholder: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            FormSection(label + " (most reliable)") {
+                TextField("", text: $url, prompt: Text(placeholder + " (optional)"), axis: .vertical)
+                    .lineLimit(1...4)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+            }
             if !linkIsValid {
-                Text("That doesn't look like a claude.ai link.").font(.caption).foregroundStyle(.red)
+                Text("That doesn't look like a claude.ai link.").font(.caption).foregroundStyle(.red).padding(.horizontal, 2)
             } else if url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("A link is the most reliable way to find it.").font(.caption).foregroundStyle(.secondary)
+                Text("A link is the most reliable way to find it.").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 2)
             }
         }
     }

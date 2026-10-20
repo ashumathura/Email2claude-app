@@ -346,6 +346,20 @@ public struct Config: Codable, Equatable {
     }
 
     /// Adds a route, replacing any existing one for the same field and domain.
+    /// Domains you send mail to that have no From route, so mail you receive from them has nowhere to go.
+    /// Only whole-domain To routes count; a From route on a parent domain covers its subdomains.
+    public var domainsWithoutFromRoute: [String] {
+        let fromDomains = routes.filter { $0.matchOn == .from && !$0.isAddressRule }.map { Router.normalizeRule($0.domain) }
+        var seen = Set<String>()
+        return routes.compactMap { route in
+            guard route.matchOn == .to, !route.isAddressRule else { return nil }
+            let domain = Router.normalizeRule(route.domain)
+            guard !domain.isEmpty, seen.insert(domain).inserted else { return nil }
+            let covered = fromDomains.contains { domain == $0 || domain.hasSuffix("." + $0) }
+            return covered ? nil : domain
+        }
+    }
+
     public mutating func upsert(_ route: Route) {
         var route = route
         route.domain = Router.normalizeRule(route.domain)

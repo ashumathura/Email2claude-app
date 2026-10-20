@@ -15,12 +15,12 @@ enum PrivacyText {
         "Nothing else about your device: no IP address, location, versions or language are stored",
     ]
     /// Shown wherever the user is asked for an email address.
-    static let emailNote = "Your email address is stored with your license key, only to issue and manage your license and to contact you about it. It is never linked to your emails, attachments or prompts. It is stored whether or not you share analytics, and you can have it removed at any time in Settings → License & Privacy → Erase My Data."
+    static let emailNote = "Your email address is stored with your license key, only to issue and manage your license and to contact you about it. It is never linked to your emails, attachments or prompts. It is stored whether or not you share analytics, and you can have it removed at any time in Settings → License → Erase My Data."
     /// The promise that matters most, shown wherever the analytics choice is.
     static let localTitle = "Your emails never leave your Mac"
     static let localBody = "Your emails, attachments and prompts are never sent to the developer or to any server of ours. They go straight from Mail into the Claude app on this Mac, and nowhere else. Once they are in Claude, Claude handles them under its own terms, exactly as if you had pasted them yourself."
 
-    static let footer = "This choice is only about usage information, and no feature depends on it. In both cases the app sends your license key and versions when it checks for updates, so it can check your license and offer a compatible update; they are only stored if you share analytics, and your IP address is not stored either. Data is kept with Supabase in the EU (Ireland). You can change your choice or erase your data at any time in Settings → License & Privacy."
+    static let footer = "This choice is only about usage information, and no feature depends on it. In both cases the app sends your license key and versions when it checks for updates, so it can check your license and offer a compatible update; they are only stored if you share analytics, and your IP address is not stored either. Data is kept with Supabase in the EU (Ireland). You can change your choice or erase your data at any time in Settings → License."
 }
 
 /// A prominent reminder that email content stays on this Mac.
@@ -65,7 +65,7 @@ struct PrivacyChoiceView: View {
                     LocalPromiseBanner()
 
                     Text("Optionally, choose what else you're happy to share:")
-                        .font(.callout.weight(.medium))
+                        .font(.subheadline.weight(.semibold))
 
                     HStack(alignment: .top, spacing: 14) {
                         card(
@@ -103,6 +103,7 @@ struct PrivacyChoiceView: View {
             .padding(.vertical, 16)
         }
         .frame(width: 680, height: windowHeight)
+        .background(Look.page)
         .tint(Brand.accent)
     }
 
@@ -119,22 +120,19 @@ struct PrivacyChoiceView: View {
     }
 
     private func card(title: String, items: [String], detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.headline)
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(items, id: \.self) { item in
-                    HStack(alignment: .top, spacing: 6) {
-                        Text("•")
-                        Text(item).fixedSize(horizontal: false, vertical: true)
-                    }
+        FormSection(title, note: detail) {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                if index > 0 { RowDivider() }
+                HStack(alignment: .top, spacing: 8) {
+                    Text("•").foregroundStyle(.secondary)
+                    Text(item).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
             }
-            Text(detail).font(.callout).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Brand.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 }
 

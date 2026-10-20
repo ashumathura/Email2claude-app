@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Email2Claude",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v14)],
     targets: [
         .target(name: "Email2ClaudeCore"),
         .executableTarget(name: "Email2Claude", dependencies: ["Email2ClaudeCore"]),
