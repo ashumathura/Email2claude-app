@@ -43,7 +43,7 @@ struct SettingsView: View {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 780, height: min(700, (NSScreen.main?.visibleFrame.height ?? 800) - 60))
+        .frame(width: 975, height: min(700, (NSScreen.main?.visibleFrame.height ?? 800) - 60))
         .background(Color(nsColor: .windowBackgroundColor))
         .tint(Brand.accent)
         .onAppear { jumpToLicenseIfAsked() }
