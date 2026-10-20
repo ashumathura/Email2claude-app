@@ -55,6 +55,8 @@ struct RouteEditorView: View {
     @State private var chatsProblem: String?
     @State private var chatsLoadedAt: Date
     @State private var isRefreshing = false
+    /// Not in the picker, so the project name is typed.
+    @State private var typingProjectName: Bool
     @State private var neverAsk = false
 
     init(
@@ -88,6 +90,10 @@ struct RouteEditorView: View {
         _chatList = State(initialValue: loaded.list)
         _chatsProblem = State(initialValue: loaded.problem)
         _chatsLoadedAt = State(initialValue: loaded.date)
+        let savedProject = (initial.name ?? "").trimmingCharacters(in: .whitespaces)
+        _typingProjectName = State(
+            initialValue: initial.kind == .project && (loaded.list.projects.isEmpty
+                || (!savedProject.isEmpty && !loaded.list.projects.contains(savedProject))))
     }
 
     // MARK: Derived values
@@ -158,6 +164,13 @@ struct RouteEditorView: View {
 
     private var chatsStatus: Text {
         if let chatsProblem { return Text(chatsProblem) }
+        if kind == .project {
+            let time = chatsLoadedAt.formatted(date: .omitted, time: .standard)
+            let count = chatList.projects.count
+            return count == 0
+                ? Text("No projects found in Claude's sidebar. Pin one there, refresh, or type its name.")
+                : Text("Updated \(time): \(count) project\(count == 1 ? "" : "s")")
+        }
         let count = chatList.chats.count
         let time = chatsLoadedAt.formatted(date: .omitted, time: .standard)
         let projects = chatList.projects.count
@@ -321,25 +334,64 @@ struct RouteEditorView: View {
                     }
                 }
             }
-            HStack(spacing: 8) {
-                Button { refreshChats() } label: {
-                    Label("Refresh Chat List", systemImage: "arrow.clockwise")
-                }
-                .controlSize(.small)
-                .disabled(isRefreshing)
-                if isRefreshing { ProgressView().controlSize(.small) }
-                chatsStatus
-                    .font(.caption)
-                    .foregroundStyle(chatsProblem == nil ? Color.secondary : Color.red)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
+            refreshRow(buttonTitle: "Refresh Chat List")
             linkField(placeholder: "https://claude.ai/chat/…", label: "Chat link")
         case .project:
-            TextField("Project name", text: $name, prompt: Text("Exactly as shown in Claude"))
+            if chatList.projects.isEmpty {
+                TextField("Project name", text: $name, prompt: Text("Exactly as shown in Claude"))
+            } else {
+                Picker("Project", selection: projectSelection) {
+                    Text("Choose a project…").tag("")
+                    ForEach(chatList.projects, id: \.self) { Text($0).tag($0) }
+                    Divider()
+                    Text("Other (type its name)…").tag(Self.otherProject)
+                }
+                if showsTypedProjectName {
+                    TextField("Project name", text: $name, prompt: Text("Exactly as shown in Claude"))
+                }
+            }
+            refreshRow(buttonTitle: "Refresh Project List")
             linkField(placeholder: "https://claude.ai/project/…", label: "Project link")
         case .newChat, .incognito:
             EmptyView()
+        }
+    }
+
+    private static let otherProject = "\u{1}other"
+
+    /// The name is typed when the user chose Other, or when it isn't one of the listed projects.
+    private var showsTypedProjectName: Bool {
+        typingProjectName || (!name.isEmpty && !chatList.projects.contains(name))
+    }
+
+    /// The project picker's value: a listed project, or "Other" while the name is typed.
+    private var projectSelection: Binding<String> {
+        Binding(
+            get: { showsTypedProjectName ? Self.otherProject : name },
+            set: { choice in
+                if choice == Self.otherProject {
+                    typingProjectName = true
+                    if chatList.projects.contains(name) { name = "" }
+                } else {
+                    typingProjectName = false
+                    name = choice
+                }
+            })
+    }
+
+    private func refreshRow(buttonTitle: String) -> some View {
+        HStack(spacing: 8) {
+            Button { refreshChats() } label: {
+                Label(buttonTitle, systemImage: "arrow.clockwise")
+            }
+            .controlSize(.small)
+            .disabled(isRefreshing)
+            if isRefreshing { ProgressView().controlSize(.small) }
+            chatsStatus
+                .font(.caption)
+                .foregroundStyle(chatsProblem == nil ? Color.secondary : Color.red)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
     }
 
