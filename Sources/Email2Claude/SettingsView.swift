@@ -241,13 +241,11 @@ private struct RoutesTab: View {
                         Image(systemName: "plus").frame(width: 18, height: 18)
                     }
                     .buttonStyle(.bordered)
-                    .buttonBorderShape(.capsule)
                     .help("Add a route")
                     Button { if let route = selectedRoute { remove(route) } } label: {
                         Image(systemName: "minus").frame(width: 18, height: 18)
                     }
                     .buttonStyle(.bordered)
-                    .buttonBorderShape(.capsule)
                     .disabled(selectedRoute == nil)
                     .help("Remove the selected route")
                     Spacer()
@@ -541,7 +539,6 @@ private struct ActionDetail: View {
                     ForEach([Action.reply, .summary, .research], id: \.self) { preset in
                         Button(preset.defaultName) { prompt.wrappedValue = preset.defaultInstruction }
                             .buttonStyle(.bordered)
-                            .buttonBorderShape(.capsule)
                             .controlSize(.small)
                     }
                     Spacer(minLength: 0)
