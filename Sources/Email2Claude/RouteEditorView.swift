@@ -38,6 +38,8 @@ struct RouteEditorView: View {
     /// The prompt that the preview shows the route prompt being added to.
     let previewPrompt: String
     let loadChats: () -> ClaudeSidebar.ChatListResult
+    /// What the Refresh button reads with: the same list, retried while Claude's sidebar settles.
+    private let reloadChats: () -> ClaudeSidebar.ChatListResult = { ClaudeSidebar.reloadChatList() }
     let onSave: (Route) -> Void
     let onOnce: ((Route) -> Void)?
     let onNeverAsk: (() -> Void)?
@@ -201,13 +203,16 @@ struct RouteEditorView: View {
 
     private func refreshChats() {
         isRefreshing = true
-        // Let the button show its busy state before the (brief) read of Claude's sidebar.
-        DispatchQueue.main.async {
-            let loaded = loadChats()
-            chatList = loaded.list
-            chatsProblem = loaded.problem
-            chatsLoadedAt = loaded.date
-            isRefreshing = false
+        // The read can take a couple of seconds when Claude has just changed view, so it runs off the main thread.
+        let reload = reloadChats
+        DispatchQueue.global(qos: .userInitiated).async {
+            let loaded = reload()
+            DispatchQueue.main.async {
+                chatList = loaded.list
+                chatsProblem = loaded.problem
+                chatsLoadedAt = loaded.date
+                isRefreshing = false
+            }
         }
     }
 
