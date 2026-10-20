@@ -209,7 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               store.config.askForUnknownRoutes
         else { return newChat }
 
-        switch RouteChooser.ask(suggestion: suggestion, previewPrompt: store.config.instruction(for: .reply)) {
+        switch RouteChooser.ask(email: email, suggestion: suggestion, previewPrompt: store.config.instruction(for: .reply)) {
         case .save(let route):
             store.config.upsert(route)
             return Resolved(target: route.target, destination: route, rule: Router.normalizeRule(route.domain))
