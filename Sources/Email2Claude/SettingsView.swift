@@ -121,8 +121,9 @@ private struct RoutesTab: View {
     @ObservedObject var store: ConfigStore
     @State private var selection: String?
     @State private var editor: EditorItem?
-    @State private var testFrom = ""
-    @State private var testTo = ""
+    @State private var testAddress = ""
+    @State private var testField: MatchField = .to
+    @State private var showsHelp = false
 
     private struct EditorItem: Identifiable {
         let id = UUID()
@@ -135,52 +136,41 @@ private struct RoutesTab: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            explainer
-
-            List(selection: $selection) {
-                ForEach(store.config.routes) { route in
-                    RouteRow(
-                        route: route,
-                        overlaps: store.config.routes.filter { Router.overlaps(route, $0) })
-                        .tag(route.id)
-                }
-                .onMove { store.config.routes.move(fromOffsets: $0, toOffset: $1) }
-            }
-            .listStyle(.inset(alternatesRowBackgrounds: true))
-            .overlay {
-                if store.config.routes.isEmpty {
-                    Text("No routes yet.\nThey are added when you send an email that has none, or with +.")
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 14) {
+            PageHeader("Routes", subtitle: "Decide which Claude chat each email goes to, so Claude remembers each client or topic.") {
                 Button { editor = EditorItem(route: Route(domain: ""), isNew: true) } label: {
-                    Image(systemName: "plus")
+                    Label("Add route", systemImage: "plus")
                 }
-                Button(action: remove) { Image(systemName: "minus") }
-                    .disabled(selectedRoute == nil)
-                Spacer()
-                Text("Drag to reorder. Higher wins.").font(.caption).foregroundStyle(.secondary)
-                Button("Edit…") {
-                    if let route = selectedRoute { editor = EditorItem(route: route, isNew: false) }
-                }
-                .disabled(selectedRoute == nil)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             }
+
+            TipBox(.info) {
+                Text("**3 rules:** a full address beats a domain · higher in the list wins · no match, the app asks.")
+                    .font(.callout)
+                Spacer(minLength: 8)
+                Button("How routes work") { showsHelp = true }
+                    .popover(isPresented: $showsHelp, arrowEdge: .bottom) { explainer.padding(16).frame(width: 440) }
+            }
+
+            routeList
+
+            Text("Double-click a route to edit it. Select one and press Delete to remove it.")
+                .font(.caption).foregroundStyle(.secondary)
 
             tester
 
-            VStack(alignment: .leading, spacing: 3) {
-                Toggle("Ask where to send emails that have no route", isOn: $store.config.askForUnknownRoutes)
-                Text(store.config.askForUnknownRoutes
-                     ? "A window asks the first time you send an email that has none, and remembers your answer."
-                     : "Emails without a route always start a new chat.")
-                    .font(.caption).foregroundStyle(.secondary)
+            Toggle(isOn: $store.config.askForUnknownRoutes) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Ask where to send emails that have no route").fontWeight(.semibold)
+                    Text(store.config.askForUnknownRoutes
+                         ? "A window asks what should happen with an email that has none."
+                         : "Emails without a route start a new chat without asking.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
-        .padding(20)
+        .padding(24)
         .sheet(item: $editor) { item in
             RouteEditorView(
                 title: item.isNew ? "Add Route" : "Edit Route",
@@ -200,62 +190,111 @@ private struct RoutesTab: View {
         }
     }
 
-    private var explainer: some View {
-        Callout {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("How routes work").font(.headline)
-                Text("A route decides where an email goes in Claude. Each route looks at one field, and matches either a whole domain or one address:")
-                    .fixedSize(horizontal: false, vertical: true)
-                ExampleRow(
-                    symbol: "tray.and.arrow.down", title: "From: mail you receive",
-                    example: "anna@company.com", result: "Claude chat “Anna”",
-                    note: "a domain like company.com covers everyone at that company")
-                ExampleRow(
-                    symbol: "paperplane", title: "To: mail you send",
-                    example: "company.com", result: "Claude project “Company”",
-                    note: "a client you write to and hear from needs one From route and one To route")
-                Text("A full address beats a domain. Otherwise the route higher in the list wins, so drag to reorder. No match: the app asks, or starts a new chat.")
-                    .calloutNote()
-                    .fixedSize(horizontal: false, vertical: true)
+    private var routeList: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("When an email is…").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer()
+                Text("Drag to reorder. Higher wins.").font(.caption).foregroundStyle(.secondary)
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            Divider()
+            List(selection: $selection) {
+                ForEach(store.config.routes) { route in
+                    RouteRow(
+                        route: route,
+                        overlaps: store.config.routes.filter { Router.overlaps(route, $0) },
+                        onEdit: { editor = EditorItem(route: route, isNew: false) })
+                        .tag(route.id)
+                        .contextMenu {
+                            Button("Edit…") { editor = EditorItem(route: route, isNew: false) }
+                            Button("Delete", role: .destructive) { remove(route) }
+                        }
+                }
+                .onMove { store.config.routes.move(fromOffsets: $0, toOffset: $1) }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .onDeleteCommand { if let route = selectedRoute { remove(route) } }
+            .overlay {
+                if store.config.routes.isEmpty {
+                    Text("No routes yet.\nThey are added when you send an email that has none, or with Add route.")
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(minHeight: 150)
+        .background(Look.card, in: RoundedRectangle(cornerRadius: Look.cardRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Look.cardRadius, style: .continuous).stroke(Look.border))
+        .clipShape(RoundedRectangle(cornerRadius: Look.cardRadius, style: .continuous))
+    }
+
+    private var explainer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("How routes work").font(.headline)
+            Text("A route decides where an email goes in Claude. Each route looks at one field, and matches either a whole domain or one address:")
+                .fixedSize(horizontal: false, vertical: true)
+            ExampleRow(
+                symbol: "tray.and.arrow.down", title: "From: mail you receive",
+                example: "anna@company.com", result: "Claude chat “Anna”",
+                note: "a domain like company.com covers everyone at that company")
+            ExampleRow(
+                symbol: "paperplane", title: "To: mail you send",
+                example: "company.com", result: "Claude project “Company”",
+                note: "a client you write to and hear from needs one From route and one To route")
+            Text("A full address beats a domain. Otherwise the route higher in the list wins, so drag to reorder. No match: the app asks, or starts a new chat.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     /// Shows which route an email would get, so the order and the precedence rules can be checked.
     private var tester: some View {
-        DisclosureGroup("Test your routes") {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    TextField("From", text: $testFrom, prompt: Text("anna@company.com"))
-                    TextField("To", text: $testTo, prompt: Text("you@yourcompany.com"))
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Test your routes").font(.headline)
+                HStack(spacing: 10) {
+                    Text("Email address").fontWeight(.medium)
+                    TextField("", text: $testAddress, prompt: Text("anna@company.com"))
+                        .textFieldStyle(.roundedBorder)
+                    Picker("", selection: $testField) {
+                        Text("Sent to").tag(MatchField.to)
+                        Text("Received from").tag(MatchField.from)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
                 }
-                .textFieldStyle(.roundedBorder)
-                Text(testResult)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                TipBox(.info) {
+                    Text(testResult).font(.callout).fixedSize(horizontal: false, vertical: true)
+                }
             }
-            .padding(.top, 6)
         }
     }
 
     private var testResult: LocalizedStringKey {
-        guard !testFrom.isEmpty || !testTo.isEmpty else { return "Type a sender and a recipient to see which route would apply." }
-        let email = Email(
-            sender: testFrom, subject: "", date: "", to: testTo.isEmpty ? [] : [testTo], cc: [], body: "", attachmentPaths: [])
+        let address = testAddress.trimmingCharacters(in: .whitespaces)
+        guard !address.isEmpty else { return "Type an address and choose whether you send to it or receive from it, to see which route applies." }
+        let email = testField == .from
+            ? Email(sender: address, subject: "", date: "", to: [], cc: [], body: "", attachmentPaths: [])
+            : Email(sender: "", subject: "", date: "", to: [address], cc: [], body: "", attachmentPaths: [])
         guard let hit = Router.match(for: email, config: store.config) else {
             return store.config.askForUnknownRoutes
-                ? "No route matches. The app would ask where to send it."
-                : "No route matches. It would start a new chat."
+                ? "**No match.** The app would ask where to send it."
+                : "**No match.** It would start a new chat."
         }
+        let number = (store.config.routes.firstIndex { $0.id == hit.route.id } ?? 0) + 1
         let kind = hit.route.isAddressRule ? "address" : "domain"
-        return "**\(hit.route.matchOn.title) \(hit.route.domain)** (\(kind)) matches \(hit.address), so it goes to: **\(hit.route.destinationDescription)**."
+        let who = hit.route.isAddressRule ? hit.route.domain : "anyone at " + hit.route.domain
+        let verb = hit.route.matchOn == .to ? "send to" : "receive from"
+        return "**Match:** mail you \(verb) \(who) goes to **\(hit.route.destinationChip)** (route \(number), matched by \(kind))."
     }
 
-    private func remove() {
-        guard let route = selectedRoute else { return }
+    private func remove(_ route: Route) {
         store.config.routes.removeAll { $0.id == route.id }
-        selection = nil
+        if selection == route.id { selection = nil }
     }
 }
 
@@ -272,7 +311,7 @@ private struct ExampleRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.body.weight(.semibold))
                 Text("Email matching **\(example)** → \(result)")
-                if let note { Text(note).calloutNote() }
+                if let note { Text(note).foregroundStyle(.secondary) }
             }
         }
     }
@@ -281,30 +320,26 @@ private struct ExampleRow: View {
 private struct RouteRow: View {
     let route: Route
     let overlaps: [Route]
-
-    private var instructionsLine: String? {
-        let line = route.instructions?.split(whereSeparator: \.isNewline).first.map(String.init)
-        return line?.isEmpty == false ? line : nil
-    }
+    let onEdit: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: route.kind.symbol)
-                .frame(width: 22)
-                .foregroundStyle(.tint)
-            VStack(alignment: .leading, spacing: 2) {
+            Image(systemName: route.matchOn == .to ? "paperplane" : "tray.and.arrow.down")
+                .font(.system(size: 15))
+                .foregroundStyle(Brand.accent)
+                .frame(width: 34, height: 34)
+                .background(Brand.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(headline).font(.body.weight(.semibold)).lineLimit(1)
                 HStack(spacing: 6) {
-                    Text(route.domain).font(.body.weight(.medium))
-                    chip(route.matchOn.title)
-                    chip(route.isAddressRule ? "Address" : "Domain")
+                    Text("goes to").foregroundStyle(.secondary)
+                    Chip(text: route.destinationChip)
+                    if route.instructions?.isEmpty == false {
+                        Text("with a route prompt").foregroundStyle(.secondary)
+                    }
                 }
-                Text(route.destinationDescription).font(.callout).foregroundStyle(.secondary)
-                    .lineLimit(1)
-                if let instructionsLine {
-                    Label(instructionsLine, systemImage: "text.quote")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                .font(.callout)
+                .lineLimit(1)
             }
             Spacer(minLength: 0)
             if !overlaps.isEmpty {
@@ -312,15 +347,17 @@ private struct RouteRow: View {
                     .foregroundStyle(.orange)
                     .help("Overlaps with " + overlaps.map(\.domain).joined(separator: ", ") + ". The one higher in the list wins.")
             }
+            Button("Edit", action: onEdit).controlSize(.small)
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2, perform: onEdit)
     }
 
-    private func chip(_ text: String) -> some View {
-        Text(text)
-            .font(.caption2.weight(.semibold))
-            .padding(.horizontal, 6).padding(.vertical, 1)
-            .background(.quaternary, in: Capsule())
+    /// "Mail you send to anyone at acme.com", in plain words.
+    private var headline: String {
+        let verb = route.matchOn == .to ? "send to" : "receive from"
+        return "Mail you \(verb) " + (route.isAddressRule ? "" : "anyone at ") + route.domain
     }
 }
 
