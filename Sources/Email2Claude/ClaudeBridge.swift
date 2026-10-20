@@ -6,6 +6,7 @@ enum ClaudeError: LocalizedError {
     case noAccessibility
     case chatNotFound(String)
     case projectNotFound(String)
+    case wrongMode(ClaudeSidebar.Mode)
 
     var errorDescription: String? {
         switch self {
@@ -14,6 +15,8 @@ enum ClaudeError: LocalizedError {
             return "Accessibility permission is required to paste into Claude. Enable MailtoChat in System Settings → Privacy & Security → Accessibility."
         case .chatNotFound(let title):
             return "Couldn't find the chat “\(title)” in Claude's sidebar. Scroll it into view, or route this domain by chat link instead."
+        case .wrongMode(let mode):
+            return "Claude is showing \(mode.title), not Chat. MailtoChat opens chats and projects from the Chat view. Switch to Chat in Claude and try again."
         case .projectNotFound(let name):
             return "Couldn't find the project “\(name)” in Claude. Add the project's link in Settings → Routes for a more reliable match."
         }
@@ -100,13 +103,13 @@ enum ClaudeBridge {
             _ = try await NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: activation)
         case .sidebar(let title):
             try await activate(appURL)
-            guard ClaudeSidebar.open(title: title) else { throw ClaudeError.chatNotFound(title) }
+            guard ClaudeSidebar.open(title: title) else { throw notFound(.chatNotFound(title)) }
         case .project(let name, let link):
             if let link {
                 _ = try await NSWorkspace.shared.open([link], withApplicationAt: appURL, configuration: activation)
             } else {
                 try await activate(appURL)
-                guard await ClaudeSidebar.openProject(named: name) else { throw ClaudeError.projectNotFound(name) }
+                guard await ClaudeSidebar.openProject(named: name) else { throw notFound(.projectNotFound(name)) }
             }
         case .incognito:
             _ = try await NSWorkspace.shared.open([ChatLink.incognitoURL], withApplicationAt: appURL, configuration: activation)
@@ -114,6 +117,12 @@ enum ClaudeBridge {
             try await activate(appURL)
             press(Key.n, flags: .maskCommand)
         }
+    }
+
+    /// When a row can't be found because Claude is showing Code or Cowork, say that instead.
+    private static func notFound(_ fallback: ClaudeError) -> ClaudeError {
+        if let mode = ClaudeSidebar.currentMode(), mode != .chat { return .wrongMode(mode) }
+        return fallback
     }
 
     private static func activate(_ appURL: URL) async throws {
