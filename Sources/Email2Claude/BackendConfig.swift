@@ -6,6 +6,8 @@ enum BackendConfig {
     static let checkinURL = URL(string: "https://yomgyukfzlnjxcvdsivw.supabase.co/functions/v1/checkin")!
 
     /// Where the privacy policy is published. Windows show a link once this is set.
+    /// The online user manual.
+    static let manualURL = URL(string: "https://mailtochat.app/manual/")!
     static let privacyPolicyURL: URL? = nil
 
     static var appVersion: String {

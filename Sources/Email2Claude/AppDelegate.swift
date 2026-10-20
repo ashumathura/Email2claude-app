@@ -111,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onCheckUpdates: { [weak self] in self?.closePanel(); self?.updates.checkNow() },
             onSettings: { [weak self] in self?.closePanel(); self?.showSettings() },
             onSupport: { [weak self] in self?.closePanel(); Donate.showDialog() },
+            onManual: { [weak self] in self?.closePanel(); NSWorkspace.shared.open(BackendConfig.manualURL) },
             onQuit: { NSApp.terminate(nil) })
         let controller = NSHostingController(rootView: view)
         controller.sizingOptions = [.preferredContentSize]
