@@ -116,3 +116,53 @@ struct TipBox<Content: View>: View {
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(tone.tint.opacity(0.35)))
     }
 }
+
+/// A choice shown as a card with a radio dot, a title and a one-line explanation.
+struct OptionCard: View {
+    let title: String
+    var detail: String?
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                    .foregroundStyle(selected ? Brand.accent : Color.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.body.weight(.semibold))
+                    if let detail {
+                        Text(detail).font(.callout).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                selected ? Brand.accent.opacity(0.08) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(selected ? Brand.accent : Look.border))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// A small label for a keyboard shortcut.
+struct ShortcutChip: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(.caption, design: .rounded).weight(.medium))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Look.card, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Look.border))
+    }
+}
