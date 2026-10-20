@@ -19,8 +19,8 @@ struct AboutTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                TitledGroup("Why I built this") {
-                    Card(padding: 20) {
+                FormSection("Why I built this") {
+                    VStack(alignment: .leading, spacing: 0) {
                         HStack(alignment: .top, spacing: 16) {
                             Image(nsImage: NSApp.applicationIconImage)
                                 .resizable()
@@ -39,6 +39,7 @@ struct AboutTab: View {
                             }
                         }
                     }
+                    .padding(18)
                 }
 
                 TitledGroup("Support the app") {
@@ -54,28 +55,14 @@ struct AboutTab: View {
                     }
                 }
 
-                TitledGroup("Get help") {
-                    HStack(alignment: .top, spacing: 14) {
-                        Card {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("User manual").font(.headline)
-                                Text("Each screen explained with pictures, plus troubleshooting.")
-                                    .font(.callout).foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                Button("Open the user manual") { NSWorkspace.shared.open(BackendConfig.manualURL) }
-                                    .buttonStyle(.borderedProminent)
-                            }
-                        }
-                        Card {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Contact support").font(.headline)
-                                Text("Something not working, or an idea to share? Write to \(Self.contactEmail).")
-                                    .font(.callout).foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                Button("Send an email") {
-                                    if let url = URL(string: "mailto:\(Self.contactEmail)") { NSWorkspace.shared.open(url) }
-                                }
-                            }
+                FormSection("Get help") {
+                    FormRow("User manual", detail: "Each screen explained with pictures, plus troubleshooting.") {
+                        Button("Open the user manual") { NSWorkspace.shared.open(BackendConfig.manualURL) }
+                    }
+                    RowDivider()
+                    FormRow("Contact support", detail: "Something not working, or an idea to share? Write to \(Self.contactEmail).") {
+                        Button("Send an email") {
+                            if let url = URL(string: "mailto:\(Self.contactEmail)") { NSWorkspace.shared.open(url) }
                         }
                     }
                 }

@@ -591,7 +591,9 @@ private struct ActivityTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            PageHeader("Activity", subtitle: "What you sent to Claude and where it went. Stored only on this Mac.") {
+            HStack(alignment: .top) {
+                Text("What you sent to Claude and where it went. Stored only on this Mac.").foregroundStyle(.secondary)
+                Spacer(minLength: 12)
                 Chip(text: "🔒 Private to this Mac")
             }
 
@@ -750,66 +752,57 @@ private struct GeneralTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                PageHeader("General", subtitle: "How MailtoChat sends, logs and waits.")
                 statusBanner
 
-                TitledGroup("Sending") {
-                    VStack(spacing: 10) {
-                        SettingToggle(
-                            title: "Send to Claude automatically",
-                            detail: "On: actions with a prompt are submitted right after pasting. Off: you review the prompt and press send yourself. Paste Only never submits.",
-                            isOn: $store.config.autoSend)
-                        SettingToggle(
-                            title: "Warn when several emails are selected",
-                            detail: "MailtoChat sends one email at a time: the first one selected in Mail. On: you're told when more are selected and can cancel.",
-                            isOn: $store.config.warnMultipleSelection)
+                FormSection("Sending") {
+                    FormRow(
+                        "Send to Claude automatically",
+                        detail: "On: actions with a prompt are submitted right after pasting. Off: you review the prompt and press send yourself. Paste Only never submits.") {
+                        Toggle("", isOn: $store.config.autoSend).labelsHidden().toggleStyle(.switch)
+                    }
+                    RowDivider()
+                    FormRow(
+                        "Warn when several emails are selected",
+                        detail: "MailtoChat sends one email at a time: the first one selected in Mail. On: you're told when more are selected and can cancel.") {
+                        Toggle("", isOn: $store.config.warnMultipleSelection).labelsHidden().toggleStyle(.switch)
                     }
                 }
 
-                TitledGroup("Activity log") {
-                    SettingToggle(
-                        title: "Keep an activity log",
-                        detail: "Records the date, subject, sender, route and prompt of each email on this Mac only. See the Activity tab. Turn off to stop recording.",
-                        isOn: $store.config.keepActivityLog)
+                FormSection("Activity log") {
+                    FormRow(
+                        "Keep an activity log",
+                        detail: "Records the date, subject, sender, route and prompt of each email on this Mac only. See the Activity tab. Turn off to stop recording.") {
+                        Toggle("", isOn: $store.config.keepActivityLog).labelsHidden().toggleStyle(.switch)
+                    }
                 }
 
-                TitledGroup("Speed") {
-                    Card {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("Wait for Claude to load a chat").font(.body.weight(.semibold))
-                                Spacer()
-                                Text(String(format: "%.1f s", store.config.openDelay))
-                                    .font(.title3.weight(.semibold)).foregroundStyle(Brand.accent).monospacedDigit()
-                            }
-                            HStack(spacing: 10) {
-                                Text("Faster").font(.caption).foregroundStyle(.secondary)
-                                Slider(value: $store.config.openDelay, in: 0.4...3, step: 0.1)
-                                Text("Safer").font(.caption).foregroundStyle(.secondary)
-                            }
-                            Text("If emails paste before the chat has finished opening, move the slider toward Safer. New chats ignore this setting.")
-                                .font(.callout).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                FormSection(
+                    "Speed",
+                    note: "If emails paste before the chat has finished opening, move the slider toward Safer. New chats ignore this setting.") {
+                    FormRow("Wait for Claude to load a chat") {
+                        HStack(spacing: 8) {
+                            Text("Faster").font(.caption).foregroundStyle(.secondary)
+                            Slider(value: $store.config.openDelay, in: 0.4...3, step: 0.1).frame(width: 170)
+                            Text("Safer").font(.caption).foregroundStyle(.secondary)
+                            Text(String(format: "%.1f s", store.config.openDelay))
+                                .monospacedDigit().foregroundStyle(Brand.accent).frame(width: 40, alignment: .trailing)
                         }
                     }
                 }
 
-                TitledGroup("Permissions") {
-                    Card {
-                        VStack(alignment: .leading, spacing: 12) {
-                            permissionRow(
-                                "Accessibility", "Lets MailtoChat read Claude's chat list and paste into it.", allowed: accessibility)
-                            Divider()
-                            permissionRow(
-                                "Automation: Mail", "Lets MailtoChat read the email you have selected.", allowed: mailAutomation)
-                            Divider()
-                            HStack {
-                                Button("Recheck", action: recheck)
-                                Button("Open Accessibility Settings") { open("Privacy_Accessibility") }
-                                Button("Open Automation Settings") { open("Privacy_Automation") }
-                            }
-                        }
+                FormSection("Permissions") {
+                    permissionRow("Accessibility", "Lets MailtoChat read Claude's chat list and paste into it.", allowed: accessibility)
+                    RowDivider()
+                    permissionRow("Automation: Mail", "Lets MailtoChat read the email you have selected.", allowed: mailAutomation)
+                    RowDivider()
+                    HStack(spacing: 8) {
+                        Button("Recheck", action: recheck)
+                        Button("Open Accessibility Settings") { open("Privacy_Accessibility") }
+                        Button("Open Automation Settings") { open("Privacy_Automation") }
+                        Spacer(minLength: 0)
                     }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
                 }
             }
             .padding(24)
@@ -835,17 +828,12 @@ private struct GeneralTab: View {
     }
 
     private func permissionRow(_ title: String, _ detail: String, allowed: Bool?) -> some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.body.weight(.semibold))
-                Text(detail).font(.callout).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 12)
+        FormRow(title, detail: detail) {
             switch allowed {
             case .some(true):
-                Label("Allowed", systemImage: "checkmark.circle").foregroundStyle(.green)
+                Label("Allowed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
             case .some(false):
-                Label("Not allowed", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                Label("Not allowed", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             case .none:
                 Text("Not checked yet").foregroundStyle(.secondary)
             }
@@ -894,7 +882,6 @@ private struct AccountTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                PageHeader("License & Privacy", subtitle: "Your license, updates, and what the app shares.")
                 LocalPromiseBanner()
                 if !hasKey { getKeyGroup }
                 licenseGroup
@@ -917,146 +904,123 @@ private struct AccountTab: View {
         }
     }
 
-    private func note(_ text: String) -> some View {
-        Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-    }
-
     private var licenseGroup: some View {
-        TitledGroup("License") {
-            Card {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("License key")
-                        Spacer(minLength: 12)
-                        if hasKey {
-                            Text(LicenseKey.masked(store.config.licenseKey)).font(.system(.body, design: .monospaced))
-                            Button("Copy") {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(
-                                    store.config.licenseKey.trimmingCharacters(in: .whitespacesAndNewlines), forType: .string)
+        FormSection(
+            "License",
+            note: "Your license is checked as soon as you enter it, and then about once a week when the app looks for updates. A valid license lets you download updates. The app itself keeps working either way.") {
+            FormRow("License key") {
+                if hasKey {
+                    HStack(spacing: 8) {
+                        Text(LicenseKey.masked(store.config.licenseKey)).font(.system(.body, design: .monospaced))
+                        Button("Copy") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(
+                                store.config.licenseKey.trimmingCharacters(in: .whitespacesAndNewlines), forType: .string)
+                        }
+                    }
+                } else {
+                    // The key is saved once it is complete, so the field does not turn into the masked
+                    // display after the first character.
+                    TextField("", text: $keyDraft, prompt: Text("EMC-XXXXX-XXXXX-XXXXX-XXXXX"))
+                        .font(.system(.body, design: .monospaced))
+                        .textFieldStyle(.plain)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 300)
+                        .onChange(of: keyDraft) { draft in
+                            let key = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if key.count >= 27 {
+                                store.config.licenseKey = key
+                                keyDraft = ""
+                                updates.licenseKeyEdited()
                             }
-                        } else {
-                            // The key is saved once it is complete, so the field does not turn into the masked
-                            // display after the first character.
-                            TextField("", text: $keyDraft, prompt: Text("EMC-XXXXX-XXXXX-XXXXX-XXXXX"))
-                                .font(.system(.body, design: .monospaced))
-                                .textFieldStyle(.roundedBorder)
-                                .frame(maxWidth: 300)
-                                .onChange(of: keyDraft) { draft in
-                                    let key = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    if key.count >= 27 {
-                                        store.config.licenseKey = key
-                                        keyDraft = ""
-                                        updates.licenseKeyEdited()
-                                    }
-                                }
                         }
-                    }
-                    if !store.config.licenseEmail.isEmpty {
-                        Divider()
-                        HStack {
-                            Text("Issued to")
-                            Spacer()
-                            Text(store.config.licenseEmail).foregroundStyle(.secondary)
-                        }
-                    }
-                    Divider()
-                    HStack {
-                        Text("Status")
-                        Spacer()
-                        licenseStatus
-                    }
-                    if hasKey || !store.config.licenseEmail.isEmpty {
-                        Button("Remove License…", role: .destructive) { confirmRemove = true }
-                    }
                 }
             }
-            note("Your license is checked as soon as you enter it, and then about once a week when the app looks for updates. A valid license lets you download updates. The app itself keeps working either way.")
+            if !store.config.licenseEmail.isEmpty {
+                RowDivider()
+                FormRow("Issued to") { Text(store.config.licenseEmail).foregroundStyle(.secondary) }
+            }
+            RowDivider()
+            FormRow("Status") { licenseStatus }
+            if hasKey || !store.config.licenseEmail.isEmpty {
+                RowDivider()
+                HStack {
+                    Button("Remove License…", role: .destructive) { confirmRemove = true }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+            }
         }
     }
 
     private var updatesGroup: some View {
-        TitledGroup("Updates") {
-            Card {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Installed version")
-                        Spacer()
-                        Text(BackendConfig.appVersion).foregroundStyle(.secondary)
-                    }
-                    Divider()
-                    HStack {
-                        Text("Last checked")
-                        Spacer()
-                        Text(lastChecked).foregroundStyle(.secondary)
-                    }
-                    Divider()
-                    HStack {
-                        Button("Check for Updates Now") { updates.checkNow() }
-                            .disabled(updates.busy)
-                        if updates.busy { ProgressView().controlSize(.small) }
-                    }
-                    if !updates.status.isEmpty {
-                        Text(updates.status).font(.callout).foregroundStyle(.secondary)
-                    }
-                }
+        FormSection(
+            "Updates",
+            note: updates.status.isEmpty
+                ? "The app checks once a week and asks before it downloads anything. Updating restarts the app."
+                : updates.status) {
+            FormRow("Installed version") { Text(BackendConfig.appVersion).foregroundStyle(.secondary) }
+            RowDivider()
+            FormRow("Last checked") { Text(lastChecked).foregroundStyle(.secondary) }
+            RowDivider()
+            HStack(spacing: 8) {
+                Button("Check for Updates Now") { updates.checkNow() }
+                    .disabled(updates.busy)
+                if updates.busy { ProgressView().controlSize(.small) }
+                Spacer(minLength: 0)
             }
-            note("The app checks once a week and asks before it downloads anything. Updating restarts the app.")
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
         }
     }
 
     private var privacyGroup: some View {
-        TitledGroup("Privacy") {
-            Card {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .top, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Share usage analytics").font(.body.weight(.semibold))
-                            Text("Optional. Turn it on to also store the details listed below. Your emails, senders, subjects and prompts are never part of it.")
-                                .font(.callout).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer(minLength: 0)
-                        Toggle("", isOn: sharing).labelsHidden().toggleStyle(.switch)
-                    }
-                    Divider()
-                    Text("What is stored on the server").font(.headline)
-                    ForEach(store.config.analyticsChoice == .shared ? PrivacyText.sharedItems : PrivacyText.minimalItems, id: \.self) { item in
-                        HStack(alignment: .top, spacing: 6) { Text("•"); Text(item) }
-                            .font(.callout)
-                    }
-                    Divider()
-                    HStack {
-                        Button("Erase My Data on the Server…") { confirmErase = true }
-                        if let url = BackendConfig.privacyPolicyURL { Link("Privacy policy", destination: url) }
-                    }
+        FormSection(
+            "Privacy",
+            note: "This only covers update, license and usage information. Switching off removes the analytics fields from the server right away.") {
+            FormRow(
+                "Share usage analytics",
+                detail: "Optional. Turn it on to also store the details listed below. Your emails, senders, subjects and prompts are never part of it.") {
+                Toggle("", isOn: sharing).labelsHidden().toggleStyle(.switch)
+            }
+            RowDivider()
+            VStack(alignment: .leading, spacing: 6) {
+                Text("What is stored on the server").fontWeight(.medium)
+                ForEach(store.config.analyticsChoice == .shared ? PrivacyText.sharedItems : PrivacyText.minimalItems, id: \.self) { item in
+                    HStack(alignment: .top, spacing: 6) { Text("•"); Text(item) }
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 }
             }
-            note("This only covers update, license and usage information. Switching off removes the analytics fields from the server right away.")
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            RowDivider()
+            HStack(spacing: 12) {
+                Button("Erase My Data on the Server…") { confirmErase = true }
+                if let url = BackendConfig.privacyPolicyURL { Link("Privacy policy", destination: url) }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
         }
     }
 
     private var getKeyGroup: some View {
-        TitledGroup("Get a free license key") {
-            Card {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        TextField("", text: $email, prompt: Text("you@example.com"))
-                            .textFieldStyle(.roundedBorder)
-                            .disabled(registering)
-                            .onSubmit(getKey)
-                        Button("Get Free License Key", action: getKey)
-                            .buttonStyle(.borderedProminent)
-                            .disabled(!EmailAddress.isPlausible(email) || registering)
-                        if registering { ProgressView().controlSize(.small) }
-                    }
-                    if let registerError {
-                        Label(registerError, systemImage: "exclamationmark.triangle.fill")
-                            .font(.callout).foregroundStyle(.orange)
-                    }
-                }
+        FormSection("Get a free license key", note: registerError ?? PrivacyText.emailNote, noteIsWarning: registerError != nil) {
+            HStack(spacing: 10) {
+                TextField("", text: $email, prompt: Text("you@example.com"))
+                    .textFieldStyle(.plain)
+                    .disabled(registering)
+                    .onSubmit(getKey)
+                Button("Get Free License Key", action: getKey)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!EmailAddress.isPlausible(email) || registering)
+                if registering { ProgressView().controlSize(.small) }
             }
-            note(PrivacyText.emailNote)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
         }
     }
 
