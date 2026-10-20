@@ -487,6 +487,12 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(Route(domain: "a.com", kind: .incognito).destinationChip, "Incognito chat")
     }
 
+    func testLicenseKeyIsMaskedExceptItsLastGroup() {
+        XCTAssertEqual(LicenseKey.masked("EMC-ABCDE-FGHJK-LMNPQ-RSTUV"), "EMC-••••-••••-••••-RSTUV")
+        XCTAssertEqual(LicenseKey.masked(" EMC-ABCDE-FGHJK-LMNPQ-RSTUV \n"), "EMC-••••-••••-••••-RSTUV")
+        XCTAssertEqual(LicenseKey.masked("custom-key"), "custom-key")
+    }
+
     func testPrivacyAndLicenseSettingsPersist() throws {
         var config = Config()
         XCTAssertEqual(config.analyticsChoice, .unset, "nothing is shared until the user answers")

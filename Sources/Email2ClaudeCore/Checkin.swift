@@ -129,3 +129,14 @@ public enum Checkin {
         }
     }
 }
+
+/// How a license key is shown on screen.
+public enum LicenseKey {
+    /// "EMC-ABCDE-FGHJK-LMNPQ-RSTUV" becomes "EMC-••••-••••-••••-RSTUV". Anything else is returned as it is.
+    public static func masked(_ key: String) -> String {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = trimmed.split(separator: "-")
+        guard parts.count == 5 else { return trimmed }
+        return "\(parts[0])-••••-••••-••••-\(parts[4])"
+    }
+}

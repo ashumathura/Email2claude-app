@@ -726,64 +726,122 @@ private struct ActivityTab: View {
 private struct GeneralTab: View {
     @ObservedObject var store: ConfigStore
     @State private var accessibility = ClaudeBridge.accessibilityGranted(prompt: false)
+    @State private var mailAutomation = Permissions.mailAutomation()
+
+    private func recheck() {
+        accessibility = ClaudeBridge.accessibilityGranted(prompt: false)
+        mailAutomation = Permissions.mailAutomation()
+    }
 
     var body: some View {
-        Form {
-            Section {
-                Toggle("Send to Claude automatically", isOn: $store.config.autoSend)
-            } footer: {
-                Text("For actions that add a prompt, the message is submitted right after pasting. Actions set to paste the email only never submit.")
-            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                PageHeader("General", subtitle: "How MailtoChat sends, logs and waits.")
+                statusBanner
 
-            Section {
-                Toggle("Warn when several emails are selected", isOn: $store.config.warnMultipleSelection)
-            } footer: {
-                Text("MailtoChat sends one email at a time: the first one selected in Mail. With this on, you're told when you selected more and can cancel.")
-            }
-
-            Section {
-                Toggle("Keep an activity log", isOn: $store.config.keepActivityLog)
-            } footer: {
-                Text("Records the date, subject, sender, route and prompt of each email on this Mac only. See the Activity tab.")
-            }
-
-            Section {
-                LabeledContent("Wait for Claude to load a chat") {
-                    HStack {
-                        Slider(value: $store.config.openDelay, in: 0.4...3, step: 0.1).frame(width: 160)
-                        Text(String(format: "%.1fs", store.config.openDelay))
-                            .monospacedDigit().frame(width: 36, alignment: .trailing)
+                TitledGroup("Sending") {
+                    VStack(spacing: 10) {
+                        SettingToggle(
+                            title: "Send to Claude automatically",
+                            detail: "On: actions with a prompt are submitted right after pasting. Off: you review the prompt and press send yourself. Paste Only never submits.",
+                            isOn: $store.config.autoSend)
+                        SettingToggle(
+                            title: "Warn when several emails are selected",
+                            detail: "MailtoChat sends one email at a time: the first one selected in Mail. On: you're told when more are selected and can cancel.",
+                            isOn: $store.config.warnMultipleSelection)
                     }
                 }
-            } header: {
-                Text("Speed")
-            } footer: {
-                Text("A shorter wait is faster but can paste before the chat has finished opening. New chats ignore this.")
-            }
 
-            Section {
-                LabeledContent("Accessibility") {
-                    HStack(spacing: 6) {
-                        Image(systemName: accessibility ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                            .foregroundStyle(accessibility ? .green : .orange)
-                        Text(accessibility ? "Allowed" : "Not allowed")
-                    }
+                TitledGroup("Activity log") {
+                    SettingToggle(
+                        title: "Keep an activity log",
+                        detail: "Records the date, subject, sender, route and prompt of each email on this Mac only. See the Activity tab. Turn off to stop recording.",
+                        isOn: $store.config.keepActivityLog)
                 }
-                HStack {
-                    Button("Recheck") { accessibility = ClaudeBridge.accessibilityGranted(prompt: false) }
-                    Button("Open Privacy Settings") {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                            NSWorkspace.shared.open(url)
+
+                TitledGroup("Speed") {
+                    Card {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Wait for Claude to load a chat").font(.body.weight(.semibold))
+                                Spacer()
+                                Text(String(format: "%.1f s", store.config.openDelay))
+                                    .font(.title3.weight(.semibold)).foregroundStyle(Brand.accent).monospacedDigit()
+                            }
+                            HStack(spacing: 10) {
+                                Text("Faster").font(.caption).foregroundStyle(.secondary)
+                                Slider(value: $store.config.openDelay, in: 0.4...3, step: 0.1)
+                                Text("Safer").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Text("If emails paste before the chat has finished opening, move the slider toward Safer. New chats ignore this setting.")
+                                .font(.callout).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
-            } header: {
-                Text("Permissions")
-            } footer: {
-                Text("Accessibility lets MailtoChat read Claude's chat list and paste into it.")
+
+                TitledGroup("Permissions") {
+                    Card {
+                        VStack(alignment: .leading, spacing: 12) {
+                            permissionRow(
+                                "Accessibility", "Lets MailtoChat read Claude's chat list and paste into it.", allowed: accessibility)
+                            Divider()
+                            permissionRow(
+                                "Automation: Mail", "Lets MailtoChat read the email you have selected.", allowed: mailAutomation)
+                            Divider()
+                            HStack {
+                                Button("Recheck", action: recheck)
+                                Button("Open Accessibility Settings") { open("Privacy_Accessibility") }
+                                Button("Open Automation Settings") { open("Privacy_Automation") }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(24)
+        }
+        .onAppear(perform: recheck)
+    }
+
+    @ViewBuilder private var statusBanner: some View {
+        if accessibility && mailAutomation == true {
+            TipBox(.success, symbol: "checkmark.circle.fill") {
+                Text("**Everything is set up.** MailtoChat can read Mail and paste into Claude Desktop.")
+            }
+        } else if !accessibility || mailAutomation == false {
+            TipBox(.warning, symbol: "exclamationmark.triangle.fill") {
+                Text("**Something needs your attention.** MailtoChat needs the permissions below to read Mail and paste into Claude Desktop.")
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            TipBox(.info, symbol: "info.circle") {
+                Text("**Almost set up.** macOS asks for access to Mail the first time you send an email.")
             }
         }
-        .formStyle(.grouped)
+    }
+
+    private func permissionRow(_ title: String, _ detail: String, allowed: Bool?) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.body.weight(.semibold))
+                Text(detail).font(.callout).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 12)
+            switch allowed {
+            case .some(true):
+                Label("Allowed", systemImage: "checkmark.circle").foregroundStyle(.green)
+            case .some(false):
+                Label("Not allowed", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+            case .none:
+                Text("Not checked yet").foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func open(_ pane: String) {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?" + pane) {
+            NSWorkspace.shared.open(url)
+        }
     }
 }
 
@@ -795,6 +853,7 @@ private struct AccountTab: View {
     @State private var confirmErase = false
     @State private var confirmRemove = false
     @State private var email = ""
+    @State private var keyDraft = ""
     @State private var registering = false
     @State private var registerError: String?
 
@@ -808,79 +867,28 @@ private struct AccountTab: View {
             })
     }
 
+    private var sharing: Binding<Bool> {
+        Binding(get: { choice.wrappedValue == .shared }, set: { choice.wrappedValue = $0 ? .shared : .notShared })
+    }
+
     private var lastChecked: String {
         store.config.lastUpdateCheck?.formatted(date: .abbreviated, time: .shortened) ?? "Not yet"
     }
 
+    private var hasKey: Bool { !store.config.licenseKey.trimmingCharacters(in: .whitespaces).isEmpty }
+
     var body: some View {
-        Form {
-            if store.config.licenseKey.trimmingCharacters(in: .whitespaces).isEmpty { getKeySection }
-
-            Section {
-                TextField("License key", text: $store.config.licenseKey, prompt: Text("EMC-XXXXX-XXXXX-XXXXX-XXXXX"))
-                    .font(.system(.body, design: .monospaced))
-                    .onChange(of: store.config.licenseKey) { _ in updates.licenseKeyEdited() }
-                if !store.config.licenseEmail.isEmpty {
-                    LabeledContent("Issued to", value: store.config.licenseEmail)
-                }
-                LabeledContent("Status") { licenseStatus }
-                if !store.config.licenseKey.isEmpty || !store.config.licenseEmail.isEmpty {
-                    Button("Remove License…", role: .destructive) { confirmRemove = true }
-                }
-            } header: {
-                Text("License")
-            } footer: {
-                Text("Your license is checked as soon as you enter it, and then about once a week when the app looks for updates. A valid license lets you download updates. The app itself keeps working either way.")
-            }
-
-            Section {
-                LabeledContent("Installed version", value: BackendConfig.appVersion)
-                LabeledContent("Last checked", value: lastChecked)
-                HStack {
-                    Button("Check for Updates Now") { updates.checkNow() }
-                        .disabled(updates.busy)
-                    if updates.busy { ProgressView().controlSize(.small) }
-                }
-                if !updates.status.isEmpty {
-                    Text(updates.status).font(.callout).foregroundStyle(.secondary)
-                }
-            } header: {
-                Text("Updates")
-            } footer: {
-                Text("The app checks once a week and asks before it downloads anything. Updating restarts the app.")
-            }
-
-            Section {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                PageHeader("License & Privacy", subtitle: "Your license, updates, and what the app shares.")
                 LocalPromiseBanner()
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
+                if !hasKey { getKeyGroup }
+                licenseGroup
+                updatesGroup
+                privacyGroup
             }
-
-            Section {
-                Picker("Analytics", selection: choice) {
-                    Text("Share analytics").tag(AnalyticsChoice.shared)
-                    Text("Don't share analytics").tag(AnalyticsChoice.notShared)
-                }
-                .pickerStyle(.radioGroup)
-                .labelsHidden()
-                Callout {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("What is stored on the server")
-                            .font(.headline)
-                        ForEach(store.config.analyticsChoice == .shared ? PrivacyText.sharedItems : PrivacyText.minimalItems, id: \.self) { item in
-                            HStack(alignment: .top, spacing: 6) { Text("•"); Text(item) }
-                        }
-                    }
-                }
-                Button("Erase My Data on the Server…") { confirmErase = true }
-                if let url = BackendConfig.privacyPolicyURL { Link("Privacy policy", destination: url) }
-            } header: {
-                Text("Privacy")
-            } footer: {
-                Text("This only covers update, license and usage information. Switching to \"Don't share\" removes the analytics fields from the server right away.")
-            }
+            .padding(24)
         }
-        .formStyle(.grouped)
         .alert("Remove the license from this Mac?", isPresented: $confirmRemove) {
             Button("Remove", role: .destructive) { updates.removeLicense() }
             Button("Cancel", role: .cancel) {}
@@ -895,24 +903,146 @@ private struct AccountTab: View {
         }
     }
 
-    private var getKeySection: some View {
-        Section {
-            HStack {
-                TextField("Email address", text: $email, prompt: Text("you@example.com"))
-                    .disabled(registering)
-                    .onSubmit(getKey)
-                Button("Get Free License Key", action: getKey)
-                    .disabled(!EmailAddress.isPlausible(email) || registering)
-                if registering { ProgressView().controlSize(.small) }
+    private func note(_ text: String) -> some View {
+        Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var licenseGroup: some View {
+        TitledGroup("License") {
+            Card {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("License key")
+                        Spacer(minLength: 12)
+                        if hasKey {
+                            Text(LicenseKey.masked(store.config.licenseKey)).font(.system(.body, design: .monospaced))
+                            Button("Copy") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(
+                                    store.config.licenseKey.trimmingCharacters(in: .whitespacesAndNewlines), forType: .string)
+                            }
+                        } else {
+                            // The key is saved once it is complete, so the field does not turn into the masked
+                            // display after the first character.
+                            TextField("", text: $keyDraft, prompt: Text("EMC-XXXXX-XXXXX-XXXXX-XXXXX"))
+                                .font(.system(.body, design: .monospaced))
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: 300)
+                                .onChange(of: keyDraft) { draft in
+                                    let key = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if key.count >= 27 {
+                                        store.config.licenseKey = key
+                                        keyDraft = ""
+                                        updates.licenseKeyEdited()
+                                    }
+                                }
+                        }
+                    }
+                    if !store.config.licenseEmail.isEmpty {
+                        Divider()
+                        HStack {
+                            Text("Issued to")
+                            Spacer()
+                            Text(store.config.licenseEmail).foregroundStyle(.secondary)
+                        }
+                    }
+                    Divider()
+                    HStack {
+                        Text("Status")
+                        Spacer()
+                        licenseStatus
+                    }
+                    if hasKey || !store.config.licenseEmail.isEmpty {
+                        Button("Remove License…", role: .destructive) { confirmRemove = true }
+                    }
+                }
             }
-            if let registerError {
-                Label(registerError, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout).foregroundStyle(.orange)
+            note("Your license is checked as soon as you enter it, and then about once a week when the app looks for updates. A valid license lets you download updates. The app itself keeps working either way.")
+        }
+    }
+
+    private var updatesGroup: some View {
+        TitledGroup("Updates") {
+            Card {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Installed version")
+                        Spacer()
+                        Text(BackendConfig.appVersion).foregroundStyle(.secondary)
+                    }
+                    Divider()
+                    HStack {
+                        Text("Last checked")
+                        Spacer()
+                        Text(lastChecked).foregroundStyle(.secondary)
+                    }
+                    Divider()
+                    HStack {
+                        Button("Check for Updates Now") { updates.checkNow() }
+                            .disabled(updates.busy)
+                        if updates.busy { ProgressView().controlSize(.small) }
+                    }
+                    if !updates.status.isEmpty {
+                        Text(updates.status).font(.callout).foregroundStyle(.secondary)
+                    }
+                }
             }
-        } header: {
-            Text("Get a free license key")
-        } footer: {
-            Text(PrivacyText.emailNote)
+            note("The app checks once a week and asks before it downloads anything. Updating restarts the app.")
+        }
+    }
+
+    private var privacyGroup: some View {
+        TitledGroup("Privacy") {
+            Card {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Share usage analytics").font(.body.weight(.semibold))
+                            Text("Optional. Turn it on to also store the details listed below. Your emails, senders, subjects and prompts are never part of it.")
+                                .font(.callout).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                        Toggle("", isOn: sharing).labelsHidden().toggleStyle(.switch)
+                    }
+                    Divider()
+                    Text("What is stored on the server").font(.headline)
+                    ForEach(store.config.analyticsChoice == .shared ? PrivacyText.sharedItems : PrivacyText.minimalItems, id: \.self) { item in
+                        HStack(alignment: .top, spacing: 6) { Text("•"); Text(item) }
+                            .font(.callout)
+                    }
+                    Divider()
+                    HStack {
+                        Button("Erase My Data on the Server…") { confirmErase = true }
+                        if let url = BackendConfig.privacyPolicyURL { Link("Privacy policy", destination: url) }
+                    }
+                }
+            }
+            note("This only covers update, license and usage information. Switching off removes the analytics fields from the server right away.")
+        }
+    }
+
+    private var getKeyGroup: some View {
+        TitledGroup("Get a free license key") {
+            Card {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        TextField("", text: $email, prompt: Text("you@example.com"))
+                            .textFieldStyle(.roundedBorder)
+                            .disabled(registering)
+                            .onSubmit(getKey)
+                        Button("Get Free License Key", action: getKey)
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!EmailAddress.isPlausible(email) || registering)
+                        if registering { ProgressView().controlSize(.small) }
+                    }
+                    if let registerError {
+                        Label(registerError, systemImage: "exclamationmark.triangle.fill")
+                            .font(.callout).foregroundStyle(.orange)
+                    }
+                }
+            }
+            note(PrivacyText.emailNote)
         }
     }
 

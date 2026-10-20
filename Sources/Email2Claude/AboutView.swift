@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The About tab in Settings: why the app exists, how to support it, and how to get in touch.
+/// The About tab in Settings: why the app exists, how to support it, and how to get help.
 struct AboutTab: View {
     static let contactEmail = "ashu.mathura@gmail.com"
 
@@ -17,54 +17,70 @@ struct AboutTab: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                HStack(alignment: .top, spacing: 14) {
-                    Image(nsImage: NSApp.applicationIconImage)
-                        .resizable()
-                        .frame(width: 56, height: 56)
-                    VStack(alignment: .leading, spacing: 10) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("MailtoChat").font(.title3.weight(.semibold))
-                            if !version.isEmpty {
-                                Text("Version \(version)").font(.callout).foregroundStyle(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                TitledGroup("Why I built this") {
+                    Card(padding: 20) {
+                        HStack(alignment: .top, spacing: 16) {
+                            Image(nsImage: NSApp.applicationIconImage)
+                                .resizable()
+                                .frame(width: 64, height: 64)
+                            VStack(alignment: .leading, spacing: 10) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("MailtoChat").font(.title2.weight(.bold))
+                                    if !version.isEmpty {
+                                        Text("Version \(version)").font(.callout).foregroundStyle(.secondary)
+                                    }
+                                }
+                                ForEach(Self.story, id: \.self) { paragraph in
+                                    Text(paragraph).fixedSize(horizontal: false, vertical: true)
+                                }
+                                Text("Ashu").foregroundStyle(.secondary)
                             }
                         }
-                        ForEach(Self.story, id: \.self) { paragraph in
-                            Text(paragraph).fixedSize(horizontal: false, vertical: true)
-                        }
-                        Text("Ashu").foregroundStyle(.secondary)
                     }
                 }
-                .padding(.vertical, 4)
-            } header: {
-                Text("Why I built this")
-            }
 
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("New to routes, prompts or shortcuts? The online manual explains each screen with pictures.")
-                        .fixedSize(horizontal: false, vertical: true)
-                    Link("Open the user manual", destination: BackendConfig.manualURL)
+                TitledGroup("Support the app") {
+                    TipBox(.warning, symbol: "heart.fill") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(Donate.message).fixedSize(horizontal: false, vertical: true)
+                            Text(Donate.linkLead).foregroundStyle(.secondary)
+                            Link(Donate.url.absoluteString, destination: Donate.url)
+                            Button("Donate on Revolut") { Donate.open() }
+                                .buttonStyle(.borderedProminent)
+                            Text(Donate.privacyNote).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                 }
-                .padding(.vertical, 4)
-            } header: {
-                Text("User manual")
-            }
 
-            DonateSection()
-
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Feel free to drop me a line with feedback, support questions or feature requests.")
-                        .fixedSize(horizontal: false, vertical: true)
-                    Link(Self.contactEmail, destination: URL(string: "mailto:\(Self.contactEmail)")!)
+                TitledGroup("Get help") {
+                    HStack(alignment: .top, spacing: 14) {
+                        Card {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("User manual").font(.headline)
+                                Text("Each screen explained with pictures, plus troubleshooting.")
+                                    .font(.callout).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Button("Open the user manual") { NSWorkspace.shared.open(BackendConfig.manualURL) }
+                                    .buttonStyle(.borderedProminent)
+                            }
+                        }
+                        Card {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Contact support").font(.headline)
+                                Text("Something not working, or an idea to share? Write to \(Self.contactEmail).")
+                                    .font(.callout).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Button("Send an email") {
+                                    if let url = URL(string: "mailto:\(Self.contactEmail)") { NSWorkspace.shared.open(url) }
+                                }
+                            }
+                        }
+                    }
                 }
-                .padding(.vertical, 4)
-            } header: {
-                Text("Get in touch")
             }
+            .padding(24)
         }
-        .formStyle(.grouped)
     }
 }

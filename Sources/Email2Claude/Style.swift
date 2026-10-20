@@ -166,3 +166,42 @@ struct ShortcutChip: View {
             .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Look.border))
     }
 }
+
+/// A setting with a switch on the right and a short explanation under its title, in a card.
+struct SettingToggle: View {
+    let title: String
+    let detail: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Card {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.body.weight(.semibold))
+                    Text(detail).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Toggle("", isOn: $isOn).labelsHidden().toggleStyle(.switch)
+            }
+        }
+    }
+}
+
+/// A heading with cards under it.
+struct TitledGroup<Content: View>: View {
+    let title: String
+    let content: Content
+
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline)
+            content
+        }
+    }
+}
