@@ -56,6 +56,15 @@ enum ClaudeSidebar {
         return selected.count == 1 ? selected.first : nil
     }
 
+    /// The view Claude is showing: read from its Chat / Cowork / Code switch, or, when that can't be read,
+    /// recognised from the sidebar's rows (Code lists repositories, "New session in …" buttons and Routines).
+    static func effectiveMode() -> Mode? {
+        if let mode = currentMode() { return mode }
+        guard ClaudeBridge.accessibilityGranted(prompt: false), let app = runningApp else { return nil }
+        let rows = collect(app, scope: .sidebar).filter(isChatRow).map(\.title)
+        return ChatList.looksLikeCodeSidebar(rows) ? .code : nil
+    }
+
     private static func isSelected(_ element: AXUIElement) -> Bool {
         if let flag = attribute(element, kAXSelectedAttribute) as? Bool { return flag }
         if let value = attribute(element, kAXValueAttribute) as? NSNumber { return value.intValue == 1 }
@@ -86,7 +95,7 @@ enum ClaudeSidebar {
         guard let app = runningApp else {
             return ChatListResult(list: ChatList(), problem: "Claude isn't running. Open the Claude app, then refresh.")
         }
-        if let mode = currentMode(), mode != .chat {
+        if let mode = effectiveMode(), mode != .chat {
             return ChatListResult(
                 list: ChatList(),
                 problem: "Claude is showing \(mode.title), not Chat. Chats and projects can only be read from Chat. Switch to Chat in Claude, then refresh.")

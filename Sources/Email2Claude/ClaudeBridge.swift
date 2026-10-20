@@ -121,7 +121,7 @@ enum ClaudeBridge {
 
     /// When a row can't be found because Claude is showing Code or Cowork, say that instead.
     private static func notFound(_ fallback: ClaudeError) -> ClaudeError {
-        if let mode = ClaudeSidebar.currentMode(), mode != .chat { return .wrongMode(mode) }
+        if let mode = ClaudeSidebar.effectiveMode(), mode != .chat { return .wrongMode(mode) }
         return fallback
     }
 
