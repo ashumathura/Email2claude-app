@@ -440,6 +440,33 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(email.selectionCount, 1, "one email unless Mail reports more")
     }
 
+    func testChatListSeparatesNavigationProjectsAndChats() {
+        let rows = [
+            "New", "Scheduled", "Design", "Pinned",
+            "eMail to Claude", "Toggle sessions for eMail to Claude", "eMail to Claude strategy and features",
+            "Refinery90", "Toggle sessions for Refinery90", "Refinery Email Replies", "Refinery90 competitor analysis",
+            "View all",
+            "EARO email replies", "Buren van Artis reply", "EARO email replies",
+        ]
+        let list = ChatList.parse(rows)
+        XCTAssertEqual(list.projects, ["eMail to Claude", "Refinery90"])
+        XCTAssertEqual(list.groups.map(\.project), ["eMail to Claude", "Refinery90", nil])
+        XCTAssertEqual(list.groups[0].chats, ["eMail to Claude strategy and features"])
+        XCTAssertEqual(list.groups[1].chats, ["Refinery Email Replies", "Refinery90 competitor analysis"])
+        XCTAssertEqual(list.groups[2].chats, ["EARO email replies", "Buren van Artis reply"], "recent chats come last, without duplicates")
+        XCTAssertFalse(list.chats.contains("New"))
+        XCTAssertFalse(list.chats.contains { $0.hasPrefix("Toggle sessions") })
+        XCTAssertFalse(list.chats.contains("Refinery90"), "a project is not a chat")
+    }
+
+    func testChatListWithoutProjectsIsOneGroup() {
+        let list = ChatList.parse(["New", "Chats", "Plan the offsite", "Quote for Acme"])
+        XCTAssertEqual(list.groups.count, 1)
+        XCTAssertNil(list.groups[0].project)
+        XCTAssertEqual(list.chats, ["Plan the offsite", "Quote for Acme"])
+        XCTAssertTrue(ChatList.parse(["New", "Scheduled"]).isEmpty)
+    }
+
     func testPrivacyAndLicenseSettingsPersist() throws {
         var config = Config()
         XCTAssertEqual(config.analyticsChoice, .unset, "nothing is shared until the user answers")
