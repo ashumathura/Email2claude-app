@@ -41,6 +41,17 @@ struct AboutTab: View {
                 Text("Why I built this")
             }
 
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("New to routes, prompts or shortcuts? The online manual explains each screen with pictures.")
+                        .fixedSize(horizontal: false, vertical: true)
+                    Link("Open the user manual", destination: BackendConfig.manualURL)
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("User manual")
+            }
+
             DonateSection()
 
             Section {

@@ -29,6 +29,7 @@ struct MenuPanelView: View {
     let onCheckUpdates: () -> Void
     let onSettings: () -> Void
     let onSupport: () -> Void
+    let onManual: () -> Void
     let onQuit: () -> Void
 
     private var actions: [Action] { Action.allCases.filter { store.config.isConfigured($0) } }
@@ -66,6 +67,7 @@ struct MenuPanelView: View {
                 IconButton(symbol: "arrow.triangle.2.circlepath", label: "Check for Updates", action: onCheckUpdates)
                 IconButton(symbol: "gearshape", label: "Settings", action: onSettings)
                 IconButton(symbol: "heart", label: "Support the App", action: onSupport)
+                IconButton(symbol: "book", label: "User Manual", action: onManual)
                 Spacer(minLength: 0)
                 IconButton(symbol: "power", label: "Quit MailtoChat", action: onQuit)
             }
