@@ -16,11 +16,13 @@ public struct Email: Equatable {
     /// The email addresses of the Mail account the message sits in. Tells mail the user sent
     /// (the sender is one of these) from mail the user received.
     public var accountAddresses: [String]
+    /// How many messages were selected in Mail. Only the first is read, so more than one is worth a warning.
+    public var selectionCount: Int
 
     public init(
         sender: String, subject: String, date: String,
         to: [String], cc: [String], body: String, attachmentPaths: [String], messageID: String = "",
-        attachmentFolder: URL? = nil, accountAddresses: [String] = []
+        attachmentFolder: URL? = nil, accountAddresses: [String] = [], selectionCount: Int = 1
     ) {
         self.sender = sender
         self.subject = subject
@@ -32,6 +34,7 @@ public struct Email: Equatable {
         self.messageID = messageID
         self.attachmentFolder = attachmentFolder
         self.accountAddresses = accountAddresses
+        self.selectionCount = selectionCount
     }
 
     /// The text pasted into Claude.

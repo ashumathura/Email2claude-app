@@ -62,7 +62,8 @@ enum MailReader {
         return Email(
             sender: text(1), subject: text(2), date: text(3),
             to: list(4), cc: list(5), body: text(6), attachmentPaths: list(7), messageID: text(8),
-            attachmentFolder: dir, accountAddresses: list(9))
+            attachmentFolder: dir, accountAddresses: list(9),
+            selectionCount: Int(result.atIndex(10)?.int32Value ?? 1))
     }
 
     /// Fetches recipients and attachment lists in single Apple Events instead of looping, and skips
@@ -100,7 +101,7 @@ enum MailReader {
                     end if
                 end try
             end repeat
-            return {(sender of m), (subject of m), ((date received of m) as string), toList, ccList, (content of m), savedPaths, mid, acctAddrs}
+            return {(sender of m), (subject of m), ((date received of m) as string), toList, ccList, (content of m), savedPaths, mid, acctAddrs, (count of sel)}
         end tell
         """
     }

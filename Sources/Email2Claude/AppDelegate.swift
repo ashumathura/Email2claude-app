@@ -152,6 +152,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.write("\(action.rawValue): read email in \(Log.seconds(since: start)) (\(email.body.count) chars, \(email.attachmentPaths.count) attachments)")
                 // Claude may still be reading the files after the paste, so removal waits a little.
                 defer { Self.removeAttachmentFolder(of: email, after: .seconds(120)) }
+                if email.selectionCount > 1, config.warnMultipleSelection, !confirmFirstEmailOnly(email) {
+                    Self.removeAttachmentFolder(of: email, after: .zero)
+                    return
+                }
                 guard let resolved = resolveTarget(for: email) else {
                     Self.removeAttachmentFolder(of: email, after: .zero)
                     return
@@ -225,6 +229,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? await Task.sleep(for: delay)
             try? FileManager.default.removeItem(at: folder)
         }
+    }
+
+    /// Several emails are selected but only the first is sent. Returns false if the user cancels.
+    private func confirmFirstEmailOnly(_ email: Email) -> Bool {
+        let panel = NSAlert()
+        panel.messageText = "\(email.selectionCount) emails are selected"
+        panel.informativeText = "MailtoChat sends one email at a time, so only the first one will go to Claude:\n\n“\(email.subject)”"
+        panel.addButton(withTitle: "Send First Email")
+        panel.addButton(withTitle: "Cancel")
+        panel.showsSuppressionButton = true
+        panel.suppressionButton?.title = "Don't warn me again"
+        NSApp.activate(ignoringOtherApps: true)
+        let send = panel.runModal() == .alertFirstButtonReturn
+        if panel.suppressionButton?.state == .on { store.config.warnMultipleSelection = false }
+        return send
     }
 
     private func alert(_ title: String, _ message: String) {
