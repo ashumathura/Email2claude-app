@@ -105,14 +105,14 @@ public enum Router {
     }
 }
 
-/// Puts a route's standing instructions into the prompt.
+/// Puts a route's prompt into the action's prompt.
 public enum PromptBuilder {
     /// The action's prompt, then the route's instructions, introduced by a label. Routes without
     /// instructions leave the prompt exactly as it was.
     public static func compose(actionPrompt: String, routeInstructions: String?) -> String {
         let extra = routeInstructions?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !extra.isEmpty else { return actionPrompt }
-        let block = "Standing instructions for this client:\n" + extra
+        let block = "Route prompt (applies to this sender or domain):\n" + extra
         let action = actionPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         return action.isEmpty ? block : action + "\n\n" + block
     }

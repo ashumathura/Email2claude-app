@@ -35,7 +35,7 @@ struct RouteEditorView: View {
     /// user switches between To and From, or between a domain and one address.
     let suggestions: Router.RouteSuggestion?
     let offersOnce: Bool
-    /// The prompt that the preview shows the standing instructions being added to.
+    /// The prompt that the preview shows the route prompt being added to.
     let previewPrompt: String
     let loadChats: () -> [String]
     let onSave: (Route) -> Void
@@ -144,7 +144,7 @@ struct RouteEditorView: View {
         }
     }
 
-    /// Exactly what Claude would receive for a made-up email, with the standing instructions in place.
+    /// Exactly what Claude would receive for a made-up email, with the route prompt in place.
     private var preview: String {
         let sample = Email(
             sender: "Anna de Vries <anna@example.com>", subject: "Question about the quote", date: "Mon, 5 May 2026",
@@ -230,9 +230,9 @@ struct RouteEditorView: View {
                             .textSelection(.enabled)
                     }
                 } header: {
-                    Text("Standing instructions (optional)")
+                    Text("Route prompt (optional)")
                 } footer: {
-                    Text("Added to the prompt every time this route is used, after the action's own prompt, for example “Always reply formally, in Dutch.” Actions that only paste the email aren't affected.")
+                    Text("Added after the action's prompt every time an email uses this route, so one action can behave differently per sender or domain. Example: “Always reply formally, in Dutch.” Actions set to paste only don't use it.")
                 }
                 .disabled(neverAsk)
 

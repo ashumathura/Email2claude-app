@@ -140,7 +140,7 @@ final class CoreTests: XCTestCase {
 
     func testInstructionsAreAddedAfterTheActionPrompt() {
         let text = PromptBuilder.compose(actionPrompt: "Draft a reply.", routeInstructions: "  Reply formally, in Dutch.  ")
-        XCTAssertEqual(text, "Draft a reply.\n\nStanding instructions for this client:\nReply formally, in Dutch.")
+        XCTAssertEqual(text, "Draft a reply.\n\nRoute prompt (applies to this sender or domain):\nReply formally, in Dutch.")
     }
 
     func testRoutesWithoutInstructionsLeaveThePromptAlone() {
@@ -150,7 +150,7 @@ final class CoreTests: XCTestCase {
 
     func testInstructionsWorkWithoutAnActionPrompt() {
         XCTAssertEqual(PromptBuilder.compose(actionPrompt: "", routeInstructions: "Be brief."),
-                       "Standing instructions for this client:\nBe brief.")
+                       "Route prompt (applies to this sender or domain):\nBe brief.")
     }
 
     func testRouteFieldAndInstructionsSurviveSaving() throws {

@@ -160,7 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Paste-only sends the email alone; otherwise the prompt goes on top and, with
                 // auto-send on, the message is submitted so Claude acts on it straight away.
                 let mode = config.mode(for: action)
-                // A route's standing instructions go after the action's prompt. Paste-only actions add
+                // A route's prompt goes after the action's prompt. Paste-only actions add
                 // no prompt, so the route's instructions don't apply to them either.
                 let instruction = mode == .prompt
                     ? PromptBuilder.compose(
