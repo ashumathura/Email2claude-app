@@ -569,6 +569,12 @@ private struct GeneralTab: View {
             }
 
             Section {
+                Toggle("Warn when several emails are selected", isOn: $store.config.warnMultipleSelection)
+            } footer: {
+                Text("MailtoChat sends one email at a time: the first one selected in Mail. With this on, you're told when you selected more and can cancel.")
+            }
+
+            Section {
                 Toggle("Keep an activity log", isOn: $store.config.keepActivityLog)
             } footer: {
                 Text("Records the date, subject, sender, route and prompt of each email on this Mac only. See the Activity tab.")

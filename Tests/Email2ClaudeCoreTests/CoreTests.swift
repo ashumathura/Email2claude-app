@@ -426,6 +426,20 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(old.donatePromptShown)
     }
 
+    func testMultipleSelectionWarningDefaultsOnAndPersists() throws {
+        XCTAssertTrue(Config().warnMultipleSelection)
+        let old = try JSONDecoder().decode(Config.self, from: Data("{}".utf8))
+        XCTAssertTrue(old.warnMultipleSelection, "configs saved before the setting existed keep the warning on")
+
+        var config = Config()
+        config.warnMultipleSelection = false
+        let decoded = try JSONDecoder().decode(Config.self, from: JSONEncoder().encode(config))
+        XCTAssertFalse(decoded.warnMultipleSelection)
+
+        let email = Email(sender: "a@x.com", subject: "Hi", date: "today", to: [], cc: [], body: "", attachmentPaths: [])
+        XCTAssertEqual(email.selectionCount, 1, "one email unless Mail reports more")
+    }
+
     func testPrivacyAndLicenseSettingsPersist() throws {
         var config = Config()
         XCTAssertEqual(config.analyticsChoice, .unset, "nothing is shared until the user answers")
