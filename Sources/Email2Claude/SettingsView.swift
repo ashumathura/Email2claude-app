@@ -3,7 +3,7 @@ import SwiftUI
 import Email2ClaudeCore
 
 private enum SettingsTabID: String, CaseIterable, Identifiable {
-    case routes, prompts, activity, general, account
+    case routes, prompts, activity, general, account, about
 
     var id: String { rawValue }
 
@@ -14,6 +14,7 @@ private enum SettingsTabID: String, CaseIterable, Identifiable {
         case .activity: return "Activity"
         case .general: return "General"
         case .account: return "License & Privacy"
+        case .about: return "About"
         }
     }
 
@@ -24,6 +25,7 @@ private enum SettingsTabID: String, CaseIterable, Identifiable {
         case .activity: return "clock.arrow.circlepath"
         case .general: return "gearshape"
         case .account: return "key"
+        case .about: return "heart"
         }
     }
 }
@@ -64,7 +66,7 @@ struct SettingsView: View {
                         Text(item.title).font(.caption)
                     }
                     .foregroundStyle(tab == item ? Brand.accent : Color.secondary)
-                    .frame(width: 118, height: 54)
+                    .frame(width: 108, height: 54)
                     .background(
                         tab == item ? Brand.accent.opacity(0.13) : Color.clear,
                         in: RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -86,6 +88,7 @@ struct SettingsView: View {
         case .activity: ActivityTab(activity: activity)
         case .general: GeneralTab(store: store)
         case .account: AccountTab(store: store, updates: updates)
+        case .about: AboutTab()
         }
     }
 }
@@ -609,8 +612,6 @@ private struct GeneralTab: View {
             } footer: {
                 Text("Accessibility lets MailtoChat read Claude's chat list and paste into it.")
             }
-
-            DonateSection()
         }
         .formStyle(.grouped)
     }
