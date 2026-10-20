@@ -84,7 +84,7 @@ struct SettingsView: View {
     @ViewBuilder private var content: some View {
         switch tab {
         case .routes: RoutesTab(store: store)
-        case .prompts: PromptsTab(store: store)
+        case .prompts: PromptsTab(store: store, openGeneral: { tab = .general })
         case .activity: ActivityTab(activity: activity)
         case .general: GeneralTab(store: store)
         case .account: AccountTab(store: store, updates: updates)
@@ -121,8 +121,9 @@ private struct RoutesTab: View {
     @ObservedObject var store: ConfigStore
     @State private var selection: String?
     @State private var editor: EditorItem?
-    @State private var testFrom = ""
-    @State private var testTo = ""
+    @State private var testAddress = ""
+    @State private var testField: MatchField = .to
+    @State private var showsHelp = false
 
     private struct EditorItem: Identifiable {
         let id = UUID()
@@ -135,52 +136,41 @@ private struct RoutesTab: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            explainer
-
-            List(selection: $selection) {
-                ForEach(store.config.routes) { route in
-                    RouteRow(
-                        route: route,
-                        overlaps: store.config.routes.filter { Router.overlaps(route, $0) })
-                        .tag(route.id)
-                }
-                .onMove { store.config.routes.move(fromOffsets: $0, toOffset: $1) }
-            }
-            .listStyle(.inset(alternatesRowBackgrounds: true))
-            .overlay {
-                if store.config.routes.isEmpty {
-                    Text("No routes yet.\nThey are added when you send an email that has none, or with +.")
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 14) {
+            PageHeader("Routes", subtitle: "Decide which Claude chat each email goes to, so Claude remembers each client or topic.") {
                 Button { editor = EditorItem(route: Route(domain: ""), isNew: true) } label: {
-                    Image(systemName: "plus")
+                    Label("Add route", systemImage: "plus")
                 }
-                Button(action: remove) { Image(systemName: "minus") }
-                    .disabled(selectedRoute == nil)
-                Spacer()
-                Text("Drag to reorder. Higher wins.").font(.caption).foregroundStyle(.secondary)
-                Button("Edit…") {
-                    if let route = selectedRoute { editor = EditorItem(route: route, isNew: false) }
-                }
-                .disabled(selectedRoute == nil)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             }
+
+            TipBox(.info) {
+                Text("**3 rules:** a full address beats a domain · higher in the list wins · no match, the app asks.")
+                    .font(.callout)
+                Spacer(minLength: 8)
+                Button("How routes work") { showsHelp = true }
+                    .popover(isPresented: $showsHelp, arrowEdge: .bottom) { explainer.padding(16).frame(width: 440) }
+            }
+
+            routeList
+
+            Text("Double-click a route to edit it. Select one and press Delete to remove it.")
+                .font(.caption).foregroundStyle(.secondary)
 
             tester
 
-            VStack(alignment: .leading, spacing: 3) {
-                Toggle("Ask where to send emails that have no route", isOn: $store.config.askForUnknownRoutes)
-                Text(store.config.askForUnknownRoutes
-                     ? "A window asks the first time you send an email that has none, and remembers your answer."
-                     : "Emails without a route always start a new chat.")
-                    .font(.caption).foregroundStyle(.secondary)
+            Toggle(isOn: $store.config.askForUnknownRoutes) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Ask where to send emails that have no route").fontWeight(.semibold)
+                    Text(store.config.askForUnknownRoutes
+                         ? "A window asks what should happen with an email that has none."
+                         : "Emails without a route start a new chat without asking.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
-        .padding(20)
+        .padding(24)
         .sheet(item: $editor) { item in
             RouteEditorView(
                 title: item.isNew ? "Add Route" : "Edit Route",
@@ -200,62 +190,111 @@ private struct RoutesTab: View {
         }
     }
 
-    private var explainer: some View {
-        Callout {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("How routes work").font(.headline)
-                Text("A route decides where an email goes in Claude. Each route looks at one field, and matches either a whole domain or one address:")
-                    .fixedSize(horizontal: false, vertical: true)
-                ExampleRow(
-                    symbol: "tray.and.arrow.down", title: "From: mail you receive",
-                    example: "anna@company.com", result: "Claude chat “Anna”",
-                    note: "a domain like company.com covers everyone at that company")
-                ExampleRow(
-                    symbol: "paperplane", title: "To: mail you send",
-                    example: "company.com", result: "Claude project “Company”",
-                    note: "a client you write to and hear from needs one From route and one To route")
-                Text("A full address beats a domain. Otherwise the route higher in the list wins, so drag to reorder. No match: the app asks, or starts a new chat.")
-                    .calloutNote()
-                    .fixedSize(horizontal: false, vertical: true)
+    private var routeList: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("When an email is…").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer()
+                Text("Drag to reorder. Higher wins.").font(.caption).foregroundStyle(.secondary)
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            Divider()
+            List(selection: $selection) {
+                ForEach(store.config.routes) { route in
+                    RouteRow(
+                        route: route,
+                        overlaps: store.config.routes.filter { Router.overlaps(route, $0) },
+                        onEdit: { editor = EditorItem(route: route, isNew: false) })
+                        .tag(route.id)
+                        .contextMenu {
+                            Button("Edit…") { editor = EditorItem(route: route, isNew: false) }
+                            Button("Delete", role: .destructive) { remove(route) }
+                        }
+                }
+                .onMove { store.config.routes.move(fromOffsets: $0, toOffset: $1) }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .onDeleteCommand { if let route = selectedRoute { remove(route) } }
+            .overlay {
+                if store.config.routes.isEmpty {
+                    Text("No routes yet.\nThey are added when you send an email that has none, or with Add route.")
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(minHeight: 150)
+        .background(Look.card, in: RoundedRectangle(cornerRadius: Look.cardRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Look.cardRadius, style: .continuous).stroke(Look.border))
+        .clipShape(RoundedRectangle(cornerRadius: Look.cardRadius, style: .continuous))
+    }
+
+    private var explainer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("How routes work").font(.headline)
+            Text("A route decides where an email goes in Claude. Each route looks at one field, and matches either a whole domain or one address:")
+                .fixedSize(horizontal: false, vertical: true)
+            ExampleRow(
+                symbol: "tray.and.arrow.down", title: "From: mail you receive",
+                example: "anna@company.com", result: "Claude chat “Anna”",
+                note: "a domain like company.com covers everyone at that company")
+            ExampleRow(
+                symbol: "paperplane", title: "To: mail you send",
+                example: "company.com", result: "Claude project “Company”",
+                note: "a client you write to and hear from needs one From route and one To route")
+            Text("A full address beats a domain. Otherwise the route higher in the list wins, so drag to reorder. No match: the app asks, or starts a new chat.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     /// Shows which route an email would get, so the order and the precedence rules can be checked.
     private var tester: some View {
-        DisclosureGroup("Test your routes") {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    TextField("From", text: $testFrom, prompt: Text("anna@company.com"))
-                    TextField("To", text: $testTo, prompt: Text("you@yourcompany.com"))
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Test your routes").font(.headline)
+                HStack(spacing: 10) {
+                    Text("Email address").fontWeight(.medium)
+                    TextField("", text: $testAddress, prompt: Text("anna@company.com"))
+                        .textFieldStyle(.roundedBorder)
+                    Picker("", selection: $testField) {
+                        Text("Sent to").tag(MatchField.to)
+                        Text("Received from").tag(MatchField.from)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
                 }
-                .textFieldStyle(.roundedBorder)
-                Text(testResult)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                TipBox(.info) {
+                    Text(testResult).font(.callout).fixedSize(horizontal: false, vertical: true)
+                }
             }
-            .padding(.top, 6)
         }
     }
 
     private var testResult: LocalizedStringKey {
-        guard !testFrom.isEmpty || !testTo.isEmpty else { return "Type a sender and a recipient to see which route would apply." }
-        let email = Email(
-            sender: testFrom, subject: "", date: "", to: testTo.isEmpty ? [] : [testTo], cc: [], body: "", attachmentPaths: [])
+        let address = testAddress.trimmingCharacters(in: .whitespaces)
+        guard !address.isEmpty else { return "Type an address and choose whether you send to it or receive from it, to see which route applies." }
+        let email = testField == .from
+            ? Email(sender: address, subject: "", date: "", to: [], cc: [], body: "", attachmentPaths: [])
+            : Email(sender: "", subject: "", date: "", to: [address], cc: [], body: "", attachmentPaths: [])
         guard let hit = Router.match(for: email, config: store.config) else {
             return store.config.askForUnknownRoutes
-                ? "No route matches. The app would ask where to send it."
-                : "No route matches. It would start a new chat."
+                ? "**No match.** The app would ask where to send it."
+                : "**No match.** It would start a new chat."
         }
+        let number = (store.config.routes.firstIndex { $0.id == hit.route.id } ?? 0) + 1
         let kind = hit.route.isAddressRule ? "address" : "domain"
-        return "**\(hit.route.matchOn.title) \(hit.route.domain)** (\(kind)) matches \(hit.address), so it goes to: **\(hit.route.destinationDescription)**."
+        let who = hit.route.isAddressRule ? hit.route.domain : "anyone at " + hit.route.domain
+        let verb = hit.route.matchOn == .to ? "send to" : "receive from"
+        return "**Match:** mail you \(verb) \(who) goes to **\(hit.route.destinationChip)** (route \(number), matched by \(kind))."
     }
 
-    private func remove() {
-        guard let route = selectedRoute else { return }
+    private func remove(_ route: Route) {
         store.config.routes.removeAll { $0.id == route.id }
-        selection = nil
+        if selection == route.id { selection = nil }
     }
 }
 
@@ -272,7 +311,7 @@ private struct ExampleRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.body.weight(.semibold))
                 Text("Email matching **\(example)** → \(result)")
-                if let note { Text(note).calloutNote() }
+                if let note { Text(note).foregroundStyle(.secondary) }
             }
         }
     }
@@ -281,30 +320,26 @@ private struct ExampleRow: View {
 private struct RouteRow: View {
     let route: Route
     let overlaps: [Route]
-
-    private var instructionsLine: String? {
-        let line = route.instructions?.split(whereSeparator: \.isNewline).first.map(String.init)
-        return line?.isEmpty == false ? line : nil
-    }
+    let onEdit: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: route.kind.symbol)
-                .frame(width: 22)
-                .foregroundStyle(.tint)
-            VStack(alignment: .leading, spacing: 2) {
+            Image(systemName: route.matchOn == .to ? "paperplane" : "tray.and.arrow.down")
+                .font(.system(size: 15))
+                .foregroundStyle(Brand.accent)
+                .frame(width: 34, height: 34)
+                .background(Brand.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(headline).font(.body.weight(.semibold)).lineLimit(1)
                 HStack(spacing: 6) {
-                    Text(route.domain).font(.body.weight(.medium))
-                    chip(route.matchOn.title)
-                    chip(route.isAddressRule ? "Address" : "Domain")
+                    Text("goes to").foregroundStyle(.secondary)
+                    Chip(text: route.destinationChip)
+                    if route.instructions?.isEmpty == false {
+                        Text("with a route prompt").foregroundStyle(.secondary)
+                    }
                 }
-                Text(route.destinationDescription).font(.callout).foregroundStyle(.secondary)
-                    .lineLimit(1)
-                if let instructionsLine {
-                    Label(instructionsLine, systemImage: "text.quote")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                .font(.callout)
+                .lineLimit(1)
             }
             Spacer(minLength: 0)
             if !overlaps.isEmpty {
@@ -312,15 +347,17 @@ private struct RouteRow: View {
                     .foregroundStyle(.orange)
                     .help("Overlaps with " + overlaps.map(\.domain).joined(separator: ", ") + ". The one higher in the list wins.")
             }
+            Button("Edit", action: onEdit).controlSize(.small)
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2, perform: onEdit)
     }
 
-    private func chip(_ text: String) -> some View {
-        Text(text)
-            .font(.caption2.weight(.semibold))
-            .padding(.horizontal, 6).padding(.vertical, 1)
-            .background(.quaternary, in: Capsule())
+    /// "Mail you send to anyone at acme.com", in plain words.
+    private var headline: String {
+        let verb = route.matchOn == .to ? "send to" : "receive from"
+        return "Mail you \(verb) " + (route.isAddressRule ? "" : "anyone at ") + route.domain
     }
 }
 
@@ -328,21 +365,28 @@ private struct RouteRow: View {
 
 private struct PromptsTab: View {
     @ObservedObject var store: ConfigStore
+    let openGeneral: () -> Void
     @State private var selected: Action? = .reply
 
     var body: some View {
         HStack(spacing: 0) {
-            List(Action.allCases, selection: $selected) { action in
-                ActionRow(name: store.config.name(for: action), placeholder: action.placeholderName,
-                          shortcut: action.shortcutLabel, configured: store.config.isConfigured(action))
-                    .tag(action)
+            List(selection: $selected) {
+                Section {
+                    ForEach(Action.allCases) { action in
+                        ActionRow(name: store.config.name(for: action), placeholder: action.placeholderName,
+                                  shortcut: action.shortcutLabel, configured: store.config.isConfigured(action))
+                            .tag(action)
+                    }
+                } header: {
+                    Text("Your \(Action.allCases.count) actions")
+                }
             }
             .listStyle(.sidebar)
-            .frame(width: 240)
+            .frame(width: 250)
 
             Divider()
 
-            ActionDetail(store: store, action: selected ?? .reply)
+            ActionDetail(store: store, action: selected ?? .reply, openGeneral: openGeneral)
                 .id(selected)
         }
     }
@@ -355,24 +399,25 @@ private struct ActionRow: View {
     let configured: Bool
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 1) {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(name.isEmpty ? placeholder : name)
                     .foregroundStyle(name.isEmpty ? .secondary : .primary)
                 if !configured {
-                    Text("Not in the menu yet").font(.caption).foregroundStyle(.orange)
+                    Text("Set up: add a name and a prompt").font(.caption).foregroundStyle(.orange)
                 }
             }
             Spacer()
-            Text(shortcut).font(.caption).foregroundStyle(.secondary)
+            ShortcutChip(text: shortcut)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
     }
 }
 
 private struct ActionDetail: View {
     @ObservedObject var store: ConfigStore
     let action: Action
+    let openGeneral: () -> Void
 
     private var name: Binding<String> {
         Binding(get: { store.config.name(for: action) }, set: { store.config.setName($0, for: action) })
@@ -385,79 +430,129 @@ private struct ActionDetail: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                TextField("Name", text: name, prompt: Text(action.placeholderName))
-                LabeledContent("Shortcut") {
-                    Text(action.shortcutLabel)
-                        .font(.system(.callout, design: .rounded).weight(.medium))
-                        .padding(.horizontal, 8).padding(.vertical, 2)
-                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                }
-            } header: {
-                Text("Menu item")
-            } footer: {
-                if store.config.isConfigured(action) {
-                    Text("Shown under Send to Claude in the menu bar.")
-                } else {
-                    Text("This action appears in the menu once it has a name\(mode.wrappedValue == .prompt ? " and a prompt" : "").")
-                        .foregroundStyle(.orange)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                menuItemSection
+                modeSection
+                if mode.wrappedValue == .prompt { promptSection }
+                HStack {
+                    Button("Reset to Default") { store.config.resetAction(action) }
+                        .disabled(store.config.actions[action.rawValue] == nil)
+                    Spacer()
                 }
             }
-
-            Section {
-                Picker("After pasting", selection: mode) {
-                    ForEach(ActionMode.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.radioGroup)
-                Callout { explanation }
-            } header: {
-                Text("What happens to the email")
-            }
-
-            if mode.wrappedValue == .prompt {
-                Section {
-                    TextEditor(text: prompt)
-                        .font(.body)
-                        .frame(minHeight: 120)
-                } header: {
-                    Text("Prompt")
-                } footer: {
-                    Text("Placed above the email in Claude.")
-                }
-            }
-
-            Section {
-                Button("Reset to Default") { store.config.resetAction(action) }
-                    .disabled(store.config.actions[action.rawValue] == nil)
-            }
+            .padding(24)
         }
-        .formStyle(.grouped)
     }
 
-    /// Spells out what the chosen mode does, including the effect of the auto-send setting.
-    @ViewBuilder private var explanation: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            switch mode.wrappedValue {
-            case .pasteOnly:
-                Label("The email is pasted into the routed Claude chat, and nothing else happens.", systemImage: "doc.on.clipboard")
-                Text("Nothing is sent. Type your own request in Claude, then press Return.")
-                    .calloutNote()
-            case .prompt:
-                Label("Your prompt is placed above the email, and both are pasted into the routed Claude chat.", systemImage: "text.bubble")
-                if store.config.autoSend {
-                    Text("Then it is sent right away, so Claude starts working on it immediately.")
-                        .calloutNote()
-                } else {
-                    Text("Auto-send is off, so it waits in Claude's message box until you press Return.")
-                        .calloutNote()
-                }
-                Text("Turn auto-send on or off in General.").calloutNote(.caption)
-            }
-            Text("Either way, the email's From, To, Cc, date, subject, body and attachments are included.")
-                .calloutNote(.caption)
+    private func titled<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline)
+            content()
         }
-        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var menuItemSection: some View {
+        titled("Menu item") {
+            Card {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Name")
+                        TextField("", text: name, prompt: Text(action.placeholderName))
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 260)
+                    }
+                    Divider()
+                    HStack {
+                        Text("Shortcut")
+                        Spacer()
+                        ShortcutChip(text: action.shortcutLabel)
+                    }
+                }
+            }
+            if store.config.isConfigured(action) {
+                Text("Shown under Send to Claude in the menu bar.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("This action appears in the menu once it has a name\(mode.wrappedValue == .prompt ? " and a prompt" : "").")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private var modeSection: some View {
+        titled("What happens to the email") {
+            HStack(alignment: .top, spacing: 10) {
+                OptionCard(
+                    title: ActionMode.pasteOnly.title,
+                    detail: "You type your own message. Nothing is sent for you.",
+                    selected: mode.wrappedValue == .pasteOnly) { mode.wrappedValue = .pasteOnly }
+                OptionCard(
+                    title: ActionMode.prompt.title,
+                    detail: "Your prompt goes above the email, then both are sent to the routed chat.",
+                    selected: mode.wrappedValue == .prompt) { mode.wrappedValue = .prompt }
+            }
+            if mode.wrappedValue == .prompt {
+                TipBox(.info) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(store.config.autoSend
+                             ? "**Auto-send is on**, so Claude starts working straight away. The email's From, To, Cc, date, subject, body and attachments are always included."
+                             : "**Auto-send is off**, so the message waits in Claude's message box until you press Return. The email's From, To, Cc, date, subject, body and attachments are always included.")
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Change in General", action: openGeneral)
+                    }
+                }
+            } else {
+                TipBox(.info) {
+                    Text("The email is pasted into the routed Claude chat and nothing else happens. Type your own request in Claude, then press Return. Its From, To, Cc, date, subject, body and attachments are included.")
+                        .font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private var promptSection: some View {
+        titled("Prompt") {
+            TextEditor(text: prompt)
+                .font(.body)
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 130)
+                .padding(8)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Look.border))
+            HStack(spacing: 8) {
+                Text("Start from:").font(.callout).foregroundStyle(.secondary)
+                ForEach([Action.reply, .summary, .research], id: \.self) { preset in
+                    Button(preset.defaultName) { prompt.wrappedValue = preset.defaultInstruction }
+                        .controlSize(.small)
+                }
+            }
+            Text("Placed above the email in Claude. The route prompt, if the route has one, follows it.")
+                .font(.caption).foregroundStyle(.secondary)
+            Card {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("What Claude receives").font(.headline)
+                    receivesRow("1", "This prompt", tinted: true)
+                    receivesRow("2", "The route prompt (if any)", tinted: false)
+                    receivesRow("3", "The email: From, To, Cc, date, subject, body and attachments", tinted: false)
+                }
+            }
+        }
+    }
+
+    private func receivesRow(_ number: String, _ text: String, tinted: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text(number).font(.callout.weight(.semibold)).foregroundStyle(Brand.accent)
+            Text(text).font(.callout)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            tinted ? Brand.accent.opacity(0.10) : Color.secondary.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -466,67 +561,72 @@ private struct ActionDetail: View {
 private struct ActivityTab: View {
     @ObservedObject var activity: ActivityStore
     @State private var query = ""
+    @State private var filter: Filter = .all
     @State private var confirmClear = false
 
-    private var rows: [ActivityEntry] { activity.entries.filter { $0.matches(query) } }
+    private enum Filter: String, CaseIterable, Identifiable {
+        case all = "All", today = "Today"
+        var id: String { rawValue }
+    }
+
+    private var rows: [ActivityEntry] {
+        activity.entries.filter { entry in
+            entry.matches(query) && (filter == .all || Calendar.current.isDateInToday(entry.date))
+        }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
+        VStack(alignment: .leading, spacing: 14) {
+            PageHeader("Activity", subtitle: "What you sent to Claude and where it went. Stored only on this Mac.") {
+                Chip(text: "🔒 Private to this Mac")
+            }
+
+            HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Search subject, sender, route or prompt", text: $query)
                     .textFieldStyle(.roundedBorder)
+                Picker("", selection: $filter) {
+                    ForEach(Filter.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
                 Text("\(rows.count) of \(activity.entries.count)")
                     .font(.callout).foregroundStyle(.secondary).monospacedDigit()
             }
 
-            Table(rows) {
-                TableColumn("Date") { entry in
-                    Text(entry.date.formatted(date: .abbreviated, time: .shortened))
-                        .foregroundStyle(.secondary)
-                }
-                .width(min: 110, ideal: 130, max: 170)
-                TableColumn("Subject") { entry in
-                    if let url = entry.mailURL {
-                        Button(entry.subject.isEmpty ? "(no subject)" : entry.subject) {
-                            NSWorkspace.shared.open(url)
+            VStack(spacing: 0) {
+                header
+                Divider()
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(rows) { entry in
+                            row(entry)
+                            Divider()
                         }
-                        .buttonStyle(.link)
-                        .help("Open this email in Mail")
-                    } else {
-                        Text(entry.subject.isEmpty ? "(no subject)" : entry.subject)
                     }
                 }
-                TableColumn("From") { entry in
-                    Text(entry.sender).lineLimit(1)
-                }
-                TableColumn("Claude route") { entry in
-                    if entry.canOpenChat {
-                        Button(entry.routeText) { openChat(entry) }
-                            .buttonStyle(.link)
-                            .help("Open this chat or project in Claude")
-                    } else {
-                        Text(entry.routeText)
+                .overlay {
+                    if activity.entries.isEmpty {
+                        Text("Nothing here yet.\nEmails you send to Claude are listed here.")
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.secondary)
+                    } else if rows.isEmpty {
+                        Text("No matches.").foregroundStyle(.secondary)
                     }
                 }
-                TableColumn("Prompt") { entry in
-                    Text(entry.actionName)
-                        .help(entry.prompt.isEmpty ? "Pasted the email only" : entry.prompt)
-                }
-                .width(min: 90, ideal: 120)
+                Text("Tip: click an email to open it in Mail, or a route to open its chat in Claude.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.secondary.opacity(0.06))
             }
-            .overlay {
-                if activity.entries.isEmpty {
-                    Text("Nothing here yet.\nEmails you send to Claude are listed here.")
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.secondary)
-                } else if rows.isEmpty {
-                    Text("No matches.").foregroundStyle(.secondary)
-                }
-            }
+            .background(Look.card, in: RoundedRectangle(cornerRadius: Look.cardRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Look.cardRadius, style: .continuous).stroke(Look.border))
+            .clipShape(RoundedRectangle(cornerRadius: Look.cardRadius, style: .continuous))
 
             HStack {
-                Text("Stored only on this Mac. Click a subject to open the email in Mail, or a route to open its chat in Claude.")
+                Text("Switch the log off in General if you would rather not keep one.")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Show Log File") { activity.revealInFinder() }
@@ -534,13 +634,77 @@ private struct ActivityTab: View {
                     .disabled(activity.entries.isEmpty)
             }
         }
-        .padding(20)
+        .padding(24)
         .alert("Clear the activity log?", isPresented: $confirmClear) {
             Button("Clear Log", role: .destructive) { activity.clear() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This only removes the list in this app. Your emails and Claude chats are not touched.")
         }
+    }
+
+    private static let whenWidth: CGFloat = 96
+    private static let fromWidth: CGFloat = 120
+    private static let sentToWidth: CGFloat = 210
+    private static let actionWidth: CGFloat = 110
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            Text("When").frame(width: Self.whenWidth, alignment: .leading)
+            Text("Email").frame(maxWidth: .infinity, alignment: .leading)
+            Text("From").frame(width: Self.fromWidth, alignment: .leading)
+            Text("Sent to").frame(width: Self.sentToWidth, alignment: .leading)
+            Text("Action").frame(width: Self.actionWidth, alignment: .leading)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+    }
+
+    private func row(_ entry: ActivityEntry) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(Calendar.current.isDateInToday(entry.date) ? "Today" : entry.date.formatted(date: .abbreviated, time: .omitted))
+                Text(entry.date.formatted(date: .omitted, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+            }
+            .frame(width: Self.whenWidth, alignment: .leading)
+
+            Group {
+                if let url = entry.mailURL {
+                    Button(entry.subject.isEmpty ? "(no subject)" : entry.subject) { NSWorkspace.shared.open(url) }
+                        .buttonStyle(.link)
+                        .help("Open this email in Mail")
+                } else {
+                    Text(entry.subject.isEmpty ? "(no subject)" : entry.subject)
+                }
+            }
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(entry.sender).lineLimit(1).truncationMode(.tail)
+                .frame(width: Self.fromWidth, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 3) {
+                if entry.canOpenChat {
+                    Button { openChat(entry) } label: { Chip(text: entry.destination.destinationChip) }
+                        .buttonStyle(.plain)
+                        .help("Open this chat or project in Claude")
+                } else {
+                    Chip(text: entry.destination.destinationChip)
+                }
+                Text(entry.rule.isEmpty ? "No route" : "\(entry.destination.matchOn.title) \(entry.rule)")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+            }
+            .frame(width: Self.sentToWidth, alignment: .leading)
+
+            Text(entry.actionName).lineLimit(2)
+                .help(entry.prompt.isEmpty ? "Pasted the email only" : entry.prompt)
+                .frame(width: Self.actionWidth, alignment: .leading)
+        }
+        .font(.callout)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
     }
 
     private func openChat(_ entry: ActivityEntry) {
@@ -562,64 +726,122 @@ private struct ActivityTab: View {
 private struct GeneralTab: View {
     @ObservedObject var store: ConfigStore
     @State private var accessibility = ClaudeBridge.accessibilityGranted(prompt: false)
+    @State private var mailAutomation = Permissions.mailAutomation()
+
+    private func recheck() {
+        accessibility = ClaudeBridge.accessibilityGranted(prompt: false)
+        mailAutomation = Permissions.mailAutomation()
+    }
 
     var body: some View {
-        Form {
-            Section {
-                Toggle("Send to Claude automatically", isOn: $store.config.autoSend)
-            } footer: {
-                Text("For actions that add a prompt, the message is submitted right after pasting. Actions set to paste the email only never submit.")
-            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                PageHeader("General", subtitle: "How MailtoChat sends, logs and waits.")
+                statusBanner
 
-            Section {
-                Toggle("Warn when several emails are selected", isOn: $store.config.warnMultipleSelection)
-            } footer: {
-                Text("MailtoChat sends one email at a time: the first one selected in Mail. With this on, you're told when you selected more and can cancel.")
-            }
-
-            Section {
-                Toggle("Keep an activity log", isOn: $store.config.keepActivityLog)
-            } footer: {
-                Text("Records the date, subject, sender, route and prompt of each email on this Mac only. See the Activity tab.")
-            }
-
-            Section {
-                LabeledContent("Wait for Claude to load a chat") {
-                    HStack {
-                        Slider(value: $store.config.openDelay, in: 0.4...3, step: 0.1).frame(width: 160)
-                        Text(String(format: "%.1fs", store.config.openDelay))
-                            .monospacedDigit().frame(width: 36, alignment: .trailing)
+                TitledGroup("Sending") {
+                    VStack(spacing: 10) {
+                        SettingToggle(
+                            title: "Send to Claude automatically",
+                            detail: "On: actions with a prompt are submitted right after pasting. Off: you review the prompt and press send yourself. Paste Only never submits.",
+                            isOn: $store.config.autoSend)
+                        SettingToggle(
+                            title: "Warn when several emails are selected",
+                            detail: "MailtoChat sends one email at a time: the first one selected in Mail. On: you're told when more are selected and can cancel.",
+                            isOn: $store.config.warnMultipleSelection)
                     }
                 }
-            } header: {
-                Text("Speed")
-            } footer: {
-                Text("A shorter wait is faster but can paste before the chat has finished opening. New chats ignore this.")
-            }
 
-            Section {
-                LabeledContent("Accessibility") {
-                    HStack(spacing: 6) {
-                        Image(systemName: accessibility ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                            .foregroundStyle(accessibility ? .green : .orange)
-                        Text(accessibility ? "Allowed" : "Not allowed")
-                    }
+                TitledGroup("Activity log") {
+                    SettingToggle(
+                        title: "Keep an activity log",
+                        detail: "Records the date, subject, sender, route and prompt of each email on this Mac only. See the Activity tab. Turn off to stop recording.",
+                        isOn: $store.config.keepActivityLog)
                 }
-                HStack {
-                    Button("Recheck") { accessibility = ClaudeBridge.accessibilityGranted(prompt: false) }
-                    Button("Open Privacy Settings") {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                            NSWorkspace.shared.open(url)
+
+                TitledGroup("Speed") {
+                    Card {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Wait for Claude to load a chat").font(.body.weight(.semibold))
+                                Spacer()
+                                Text(String(format: "%.1f s", store.config.openDelay))
+                                    .font(.title3.weight(.semibold)).foregroundStyle(Brand.accent).monospacedDigit()
+                            }
+                            HStack(spacing: 10) {
+                                Text("Faster").font(.caption).foregroundStyle(.secondary)
+                                Slider(value: $store.config.openDelay, in: 0.4...3, step: 0.1)
+                                Text("Safer").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Text("If emails paste before the chat has finished opening, move the slider toward Safer. New chats ignore this setting.")
+                                .font(.callout).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
-            } header: {
-                Text("Permissions")
-            } footer: {
-                Text("Accessibility lets MailtoChat read Claude's chat list and paste into it.")
+
+                TitledGroup("Permissions") {
+                    Card {
+                        VStack(alignment: .leading, spacing: 12) {
+                            permissionRow(
+                                "Accessibility", "Lets MailtoChat read Claude's chat list and paste into it.", allowed: accessibility)
+                            Divider()
+                            permissionRow(
+                                "Automation: Mail", "Lets MailtoChat read the email you have selected.", allowed: mailAutomation)
+                            Divider()
+                            HStack {
+                                Button("Recheck", action: recheck)
+                                Button("Open Accessibility Settings") { open("Privacy_Accessibility") }
+                                Button("Open Automation Settings") { open("Privacy_Automation") }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(24)
+        }
+        .onAppear(perform: recheck)
+    }
+
+    @ViewBuilder private var statusBanner: some View {
+        if accessibility && mailAutomation == true {
+            TipBox(.success, symbol: "checkmark.circle.fill") {
+                Text("**Everything is set up.** MailtoChat can read Mail and paste into Claude Desktop.")
+            }
+        } else if !accessibility || mailAutomation == false {
+            TipBox(.warning, symbol: "exclamationmark.triangle.fill") {
+                Text("**Something needs your attention.** MailtoChat needs the permissions below to read Mail and paste into Claude Desktop.")
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            TipBox(.info, symbol: "info.circle") {
+                Text("**Almost set up.** macOS asks for access to Mail the first time you send an email.")
             }
         }
-        .formStyle(.grouped)
+    }
+
+    private func permissionRow(_ title: String, _ detail: String, allowed: Bool?) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.body.weight(.semibold))
+                Text(detail).font(.callout).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 12)
+            switch allowed {
+            case .some(true):
+                Label("Allowed", systemImage: "checkmark.circle").foregroundStyle(.green)
+            case .some(false):
+                Label("Not allowed", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+            case .none:
+                Text("Not checked yet").foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func open(_ pane: String) {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?" + pane) {
+            NSWorkspace.shared.open(url)
+        }
     }
 }
 
@@ -631,6 +853,7 @@ private struct AccountTab: View {
     @State private var confirmErase = false
     @State private var confirmRemove = false
     @State private var email = ""
+    @State private var keyDraft = ""
     @State private var registering = false
     @State private var registerError: String?
 
@@ -644,79 +867,28 @@ private struct AccountTab: View {
             })
     }
 
+    private var sharing: Binding<Bool> {
+        Binding(get: { choice.wrappedValue == .shared }, set: { choice.wrappedValue = $0 ? .shared : .notShared })
+    }
+
     private var lastChecked: String {
         store.config.lastUpdateCheck?.formatted(date: .abbreviated, time: .shortened) ?? "Not yet"
     }
 
+    private var hasKey: Bool { !store.config.licenseKey.trimmingCharacters(in: .whitespaces).isEmpty }
+
     var body: some View {
-        Form {
-            if store.config.licenseKey.trimmingCharacters(in: .whitespaces).isEmpty { getKeySection }
-
-            Section {
-                TextField("License key", text: $store.config.licenseKey, prompt: Text("EMC-XXXXX-XXXXX-XXXXX-XXXXX"))
-                    .font(.system(.body, design: .monospaced))
-                    .onChange(of: store.config.licenseKey) { _ in updates.licenseKeyEdited() }
-                if !store.config.licenseEmail.isEmpty {
-                    LabeledContent("Issued to", value: store.config.licenseEmail)
-                }
-                LabeledContent("Status") { licenseStatus }
-                if !store.config.licenseKey.isEmpty || !store.config.licenseEmail.isEmpty {
-                    Button("Remove License…", role: .destructive) { confirmRemove = true }
-                }
-            } header: {
-                Text("License")
-            } footer: {
-                Text("Your license is checked as soon as you enter it, and then about once a week when the app looks for updates. A valid license lets you download updates. The app itself keeps working either way.")
-            }
-
-            Section {
-                LabeledContent("Installed version", value: BackendConfig.appVersion)
-                LabeledContent("Last checked", value: lastChecked)
-                HStack {
-                    Button("Check for Updates Now") { updates.checkNow() }
-                        .disabled(updates.busy)
-                    if updates.busy { ProgressView().controlSize(.small) }
-                }
-                if !updates.status.isEmpty {
-                    Text(updates.status).font(.callout).foregroundStyle(.secondary)
-                }
-            } header: {
-                Text("Updates")
-            } footer: {
-                Text("The app checks once a week and asks before it downloads anything. Updating restarts the app.")
-            }
-
-            Section {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                PageHeader("License & Privacy", subtitle: "Your license, updates, and what the app shares.")
                 LocalPromiseBanner()
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
+                if !hasKey { getKeyGroup }
+                licenseGroup
+                updatesGroup
+                privacyGroup
             }
-
-            Section {
-                Picker("Analytics", selection: choice) {
-                    Text("Share analytics").tag(AnalyticsChoice.shared)
-                    Text("Don't share analytics").tag(AnalyticsChoice.notShared)
-                }
-                .pickerStyle(.radioGroup)
-                .labelsHidden()
-                Callout {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("What is stored on the server")
-                            .font(.headline)
-                        ForEach(store.config.analyticsChoice == .shared ? PrivacyText.sharedItems : PrivacyText.minimalItems, id: \.self) { item in
-                            HStack(alignment: .top, spacing: 6) { Text("•"); Text(item) }
-                        }
-                    }
-                }
-                Button("Erase My Data on the Server…") { confirmErase = true }
-                if let url = BackendConfig.privacyPolicyURL { Link("Privacy policy", destination: url) }
-            } header: {
-                Text("Privacy")
-            } footer: {
-                Text("This only covers update, license and usage information. Switching to \"Don't share\" removes the analytics fields from the server right away.")
-            }
+            .padding(24)
         }
-        .formStyle(.grouped)
         .alert("Remove the license from this Mac?", isPresented: $confirmRemove) {
             Button("Remove", role: .destructive) { updates.removeLicense() }
             Button("Cancel", role: .cancel) {}
@@ -731,24 +903,146 @@ private struct AccountTab: View {
         }
     }
 
-    private var getKeySection: some View {
-        Section {
-            HStack {
-                TextField("Email address", text: $email, prompt: Text("you@example.com"))
-                    .disabled(registering)
-                    .onSubmit(getKey)
-                Button("Get Free License Key", action: getKey)
-                    .disabled(!EmailAddress.isPlausible(email) || registering)
-                if registering { ProgressView().controlSize(.small) }
+    private func note(_ text: String) -> some View {
+        Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var licenseGroup: some View {
+        TitledGroup("License") {
+            Card {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("License key")
+                        Spacer(minLength: 12)
+                        if hasKey {
+                            Text(LicenseKey.masked(store.config.licenseKey)).font(.system(.body, design: .monospaced))
+                            Button("Copy") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(
+                                    store.config.licenseKey.trimmingCharacters(in: .whitespacesAndNewlines), forType: .string)
+                            }
+                        } else {
+                            // The key is saved once it is complete, so the field does not turn into the masked
+                            // display after the first character.
+                            TextField("", text: $keyDraft, prompt: Text("EMC-XXXXX-XXXXX-XXXXX-XXXXX"))
+                                .font(.system(.body, design: .monospaced))
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: 300)
+                                .onChange(of: keyDraft) { draft in
+                                    let key = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if key.count >= 27 {
+                                        store.config.licenseKey = key
+                                        keyDraft = ""
+                                        updates.licenseKeyEdited()
+                                    }
+                                }
+                        }
+                    }
+                    if !store.config.licenseEmail.isEmpty {
+                        Divider()
+                        HStack {
+                            Text("Issued to")
+                            Spacer()
+                            Text(store.config.licenseEmail).foregroundStyle(.secondary)
+                        }
+                    }
+                    Divider()
+                    HStack {
+                        Text("Status")
+                        Spacer()
+                        licenseStatus
+                    }
+                    if hasKey || !store.config.licenseEmail.isEmpty {
+                        Button("Remove License…", role: .destructive) { confirmRemove = true }
+                    }
+                }
             }
-            if let registerError {
-                Label(registerError, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout).foregroundStyle(.orange)
+            note("Your license is checked as soon as you enter it, and then about once a week when the app looks for updates. A valid license lets you download updates. The app itself keeps working either way.")
+        }
+    }
+
+    private var updatesGroup: some View {
+        TitledGroup("Updates") {
+            Card {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Installed version")
+                        Spacer()
+                        Text(BackendConfig.appVersion).foregroundStyle(.secondary)
+                    }
+                    Divider()
+                    HStack {
+                        Text("Last checked")
+                        Spacer()
+                        Text(lastChecked).foregroundStyle(.secondary)
+                    }
+                    Divider()
+                    HStack {
+                        Button("Check for Updates Now") { updates.checkNow() }
+                            .disabled(updates.busy)
+                        if updates.busy { ProgressView().controlSize(.small) }
+                    }
+                    if !updates.status.isEmpty {
+                        Text(updates.status).font(.callout).foregroundStyle(.secondary)
+                    }
+                }
             }
-        } header: {
-            Text("Get a free license key")
-        } footer: {
-            Text(PrivacyText.emailNote)
+            note("The app checks once a week and asks before it downloads anything. Updating restarts the app.")
+        }
+    }
+
+    private var privacyGroup: some View {
+        TitledGroup("Privacy") {
+            Card {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Share usage analytics").font(.body.weight(.semibold))
+                            Text("Optional. Turn it on to also store the details listed below. Your emails, senders, subjects and prompts are never part of it.")
+                                .font(.callout).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                        Toggle("", isOn: sharing).labelsHidden().toggleStyle(.switch)
+                    }
+                    Divider()
+                    Text("What is stored on the server").font(.headline)
+                    ForEach(store.config.analyticsChoice == .shared ? PrivacyText.sharedItems : PrivacyText.minimalItems, id: \.self) { item in
+                        HStack(alignment: .top, spacing: 6) { Text("•"); Text(item) }
+                            .font(.callout)
+                    }
+                    Divider()
+                    HStack {
+                        Button("Erase My Data on the Server…") { confirmErase = true }
+                        if let url = BackendConfig.privacyPolicyURL { Link("Privacy policy", destination: url) }
+                    }
+                }
+            }
+            note("This only covers update, license and usage information. Switching off removes the analytics fields from the server right away.")
+        }
+    }
+
+    private var getKeyGroup: some View {
+        TitledGroup("Get a free license key") {
+            Card {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        TextField("", text: $email, prompt: Text("you@example.com"))
+                            .textFieldStyle(.roundedBorder)
+                            .disabled(registering)
+                            .onSubmit(getKey)
+                        Button("Get Free License Key", action: getKey)
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!EmailAddress.isPlausible(email) || registering)
+                        if registering { ProgressView().controlSize(.small) }
+                    }
+                    if let registerError {
+                        Label(registerError, systemImage: "exclamationmark.triangle.fill")
+                            .font(.callout).foregroundStyle(.orange)
+                    }
+                }
+            }
+            note(PrivacyText.emailNote)
         }
     }
 

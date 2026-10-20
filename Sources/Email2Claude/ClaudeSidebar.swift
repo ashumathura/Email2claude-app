@@ -87,6 +87,29 @@ enum ClaudeSidebar {
     /// The chats currently visible in Claude's sidebar, grouped by project. Empty, with a reason, if
     /// Claude isn't running, Accessibility isn't granted, or the layout isn't recognised.
     static func loadChatList() -> ChatListResult {
+        loadChatListOnce()
+    }
+
+    /// For the Refresh button: Claude's accessibility tree can lag behind a switch between Chat, Cowork and
+    /// Code, so when nothing usable comes back it asks Claude to rebuild the tree and reads again a few times.
+    /// Blocks for up to about two seconds, so call it off the main thread.
+    static func reloadChatList() -> ChatListResult {
+        var result = loadChatListOnce()
+        var attempt = 0
+        while result.problem != nil, attempt < 4, runningApp != nil, ClaudeBridge.accessibilityGranted(prompt: false) {
+            if let app = runningApp {
+                let root = AXUIElementCreateApplication(app.processIdentifier)
+                AXUIElementSetAttributeValue(root, "AXManualAccessibility" as CFString, kCFBooleanFalse)
+                AXUIElementSetAttributeValue(root, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+            }
+            Thread.sleep(forTimeInterval: 0.5)
+            result = loadChatListOnce()
+            attempt += 1
+        }
+        return result
+    }
+
+    private static func loadChatListOnce() -> ChatListResult {
         guard ClaudeBridge.accessibilityGranted(prompt: false) else {
             return ChatListResult(
                 list: ChatList(),

@@ -24,29 +24,3 @@ enum Donate {
         if panel.runModal() == .alertFirstButtonReturn { open() }
     }
 }
-
-/// The Settings section with the same request and a button.
-struct DonateSection: View {
-    var body: some View {
-        Section {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "heart.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(Brand.accent)
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(Donate.message)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(Donate.linkLead).foregroundStyle(.secondary)
-                    Link(Donate.url.absoluteString, destination: Donate.url)
-                    Button("Donate on Revolut") { Donate.open() }
-                        .buttonStyle(.borderedProminent)
-                }
-            }
-            .padding(.vertical, 4)
-        } header: {
-            Text("Support the app")
-        } footer: {
-            Text(Donate.privacyNote)
-        }
-    }
-}

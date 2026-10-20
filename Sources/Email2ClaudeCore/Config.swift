@@ -112,6 +112,17 @@ public struct Route: Codable, Equatable, Identifiable {
         }
     }
 
+    /// A short label for the destination, such as "Chat · Refinery89" or "New chat".
+    public var destinationChip: String {
+        let label = name?.trimmingCharacters(in: .whitespaces) ?? ""
+        switch kind {
+        case .chat: return label.isEmpty ? "Chat" : "Chat · " + label
+        case .project: return label.isEmpty ? "Project" : "Project · " + label
+        case .newChat: return "New chat"
+        case .incognito: return "Incognito chat"
+        }
+    }
+
     /// What the settings list shows under the domain.
     public var destinationDescription: String {
         let label = name?.trimmingCharacters(in: .whitespaces) ?? ""
