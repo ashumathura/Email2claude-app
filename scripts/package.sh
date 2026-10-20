@@ -25,8 +25,10 @@ sign() {
 
 # Submits once, then polls for the verdict. Polling (instead of `notarytool --wait`) means a
 # dropped network connection during Apple's queue is retried rather than failing the whole build.
-# Gives up after NOTARIZE_TIMEOUT_MIN minutes (default 120).
+# Gives up after NOTARIZE_TIMEOUT_MIN minutes (default 120), or after $2 minutes when given.
+# With $3 = soft, a timeout or rejection returns 1 instead of exiting, so the caller can carry on.
 notarize() {
+    local timeout_min=${2:-${NOTARIZE_TIMEOUT_MIN:-120}} soft=${3:-}
     [ -n "${APPLE_ID:-}" ] && [ "$IDENTITY" != "-" ] || return 0
     local creds=(--apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD")
     local id="" out try
@@ -37,10 +39,10 @@ notarize() {
         fi
         echo "Submit attempt $try failed; retrying"; sleep 15
     done
-    [ -n "$id" ] || { echo "Could not submit $1 for notarization"; exit 1; }
+    [ -n "$id" ] || { echo "Could not submit $1 for notarization"; [ "$soft" = soft ] && return 1; exit 1; }
     echo "Submitted $1 for notarization: $id"
 
-    local deadline=$((SECONDS + ${NOTARIZE_TIMEOUT_MIN:-120} * 60)) status
+    local deadline=$((SECONDS + timeout_min * 60)) status
     while [ "$SECONDS" -lt "$deadline" ]; do
         if out=$(xcrun notarytool info "$id" "${creds[@]}" --output-format plist 2>/dev/null); then
             status=$(printf '%s' "$out" | plutil -extract status raw -o - - 2>/dev/null || echo unknown)
@@ -49,6 +51,7 @@ notarize() {
                 Accepted) return 0 ;;
                 Invalid|Rejected)
                     xcrun notarytool log "$id" "${creds[@]}" || true
+                    [ "$soft" = soft ] && return 1
                     exit 1 ;;
             esac
         else
@@ -56,7 +59,8 @@ notarize() {
         fi
         sleep 30
     done
-    echo "Notarization of $1 not finished after ${NOTARIZE_TIMEOUT_MIN:-120} minutes (submission $id)"
+    echo "Notarization of $1 not finished after $timeout_min minutes (submission $id)"
+    [ "$soft" = soft ] && return 1
     exit 1
 }
 
@@ -94,7 +98,14 @@ hdiutil create -volname "$DISPLAY_NAME" -srcfolder "$STAGE" -ov -format UDZO "$D
 rm -rf "$STAGE"
 
 sign "$DMG"
-notarize "$DMG"
-if [ -n "${APPLE_ID:-}" ] && [ "$IDENTITY" != "-" ]; then xcrun stapler staple "$DMG"; fi
+# The app inside is already notarized and stapled, which is what Gatekeeper and the updater check,
+# so the DMG's own notarization is a bonus: give it a short window and carry on without it.
+if [ -n "${APPLE_ID:-}" ] && [ "$IDENTITY" != "-" ]; then
+    if notarize "$DMG" 10 soft; then
+        xcrun stapler staple "$DMG"
+    else
+        echo "warning: $DMG is signed but not notarized; the app inside is."
+    fi
+fi
 
 echo "Built $DMG"
