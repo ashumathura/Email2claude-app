@@ -459,6 +459,15 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(list.chats.contains("Refinery90"), "a project is not a chat")
     }
 
+    func testCodeSidebarIsRecognisedAndChatSidebarIsNot() {
+        let code = ["New", "Artifacts", "Routines", "Customize", "BurenvanArtis", "New session in BurenvanArtis",
+                    "Buren van Artis website", "Email2claude-app", "eMail to Claude", "Open · 23 pull requests"]
+        XCTAssertTrue(ChatList.looksLikeCodeSidebar(code))
+        let chat = ["New", "Projects", "Artifacts", "Scheduled", "Design", "Pinned", "eMail to Claude",
+                    "Toggle sessions for eMail to Claude", "eMail to Claude strategy and features", "EARO email replies"]
+        XCTAssertFalse(ChatList.looksLikeCodeSidebar(chat))
+    }
+
     func testChatListWithoutProjectsIsOneGroup() {
         let list = ChatList.parse(["New", "Chats", "Plan the offsite", "Quote for Acme"])
         XCTAssertEqual(list.groups.count, 1)

@@ -37,6 +37,15 @@ public struct ChatList: Equatable {
     /// Labels that end a project's run of chats, so what follows is not inside it.
     private static let sectionBreaks: Set<String> = ["pinned", "view all", "recents", "chats"]
 
+    /// True when the rows look like Claude's Code sidebar, which has repositories with sessions and
+    /// "New session in <repo>" buttons, and a Routines entry, instead of Chat's projects and chats.
+    public static func looksLikeCodeSidebar(_ rows: [String]) -> Bool {
+        rows.contains { row in
+            let lower = row.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return lower == "routines" || lower.hasPrefix("new session in ")
+        }
+    }
+
     public static func parse(_ rows: [String]) -> ChatList {
         let labels = rows.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
 

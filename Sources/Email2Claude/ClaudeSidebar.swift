@@ -26,6 +26,51 @@ enum ClaudeSidebar {
 
     enum Scope { case sidebar, window }
 
+    /// The views of the Claude desktop app. Only Chat has the chats and projects this app reads and opens.
+    enum Mode: String {
+        case chat, cowork, code
+
+        var title: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
+    }
+
+    private static let modeRoles: Set<String> = ["AXRadioButton", "AXButton", "AXTab", "AXMenuButton", "AXLink"]
+
+    /// Which view Claude is showing, read from the selected one of the Chat / Cowork / Code switch at the top
+    /// of its window. nil when it can't be told (Claude isn't running, or the switch isn't recognised).
+    static func currentMode() -> Mode? {
+        guard ClaudeBridge.accessibilityGranted(prompt: false), let app = runningApp else { return nil }
+        let root = AXUIElementCreateApplication(app.processIdentifier)
+        AXUIElementSetAttributeValue(root, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        let focused = attribute(root, kAXFocusedWindowAttribute).map { $0 as! AXUIElement }
+        let windows = attribute(root, kAXWindowsAttribute) as? [AXUIElement]
+        guard let window = focused ?? windows?.first, let windowFrame = frame(of: window) else { return nil }
+
+        var selected: [Mode] = []
+        walk(window, path: [], depth: 0) { element, _ in
+            guard let role = role(of: element), modeRoles.contains(role),
+                  let title = label(of: element), let mode = Mode(rawValue: title.lowercased()),
+                  let rect = frame(of: element), rect.minY < windowFrame.minY + 140,
+                  isSelected(element) else { return }
+            selected.append(mode)
+        }
+        return selected.count == 1 ? selected.first : nil
+    }
+
+    /// The view Claude is showing: read from its Chat / Cowork / Code switch, or, when that can't be read,
+    /// recognised from the sidebar's rows (Code lists repositories, "New session in …" buttons and Routines).
+    static func effectiveMode() -> Mode? {
+        if let mode = currentMode() { return mode }
+        guard ClaudeBridge.accessibilityGranted(prompt: false), let app = runningApp else { return nil }
+        let rows = collect(app, scope: .sidebar).filter(isChatRow).map(\.title)
+        return ChatList.looksLikeCodeSidebar(rows) ? .code : nil
+    }
+
+    private static func isSelected(_ element: AXUIElement) -> Bool {
+        if let flag = attribute(element, kAXSelectedAttribute) as? Bool { return flag }
+        if let value = attribute(element, kAXValueAttribute) as? NSNumber { return value.intValue == 1 }
+        return false
+    }
+
     static var runningApp: NSRunningApplication? {
         NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first
     }
@@ -49,6 +94,11 @@ enum ClaudeSidebar {
         }
         guard let app = runningApp else {
             return ChatListResult(list: ChatList(), problem: "Claude isn't running. Open the Claude app, then refresh.")
+        }
+        if let mode = effectiveMode(), mode != .chat {
+            return ChatListResult(
+                list: ChatList(),
+                problem: "Claude is showing \(mode.title), not Chat. Chats and projects can only be read from Chat. Switch to Chat in Claude, then refresh.")
         }
         let list = ChatList.parse(collect(app, scope: .sidebar).filter(isChatRow).map(\.title))
         return ChatListResult(
