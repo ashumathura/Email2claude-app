@@ -74,16 +74,30 @@ function clientIp(req: Request): string | null {
   return null;
 }
 
-// Country and city for an IP. With an IPINFO_TOKEN secret it asks ipinfo.io; otherwise it uses
-// location headers when the platform forwards them. Returns nulls when neither is available.
+// Country and city for an IP, in this order: ipinfo.io when an IPINFO_TOKEN secret is set (HTTPS);
+// ip-api.com otherwise, which needs no key; then location headers when the platform forwards them.
+// Returns nulls when none is available. Only called for installs that chose to share analytics.
+// ip-api.com's free endpoint is plain HTTP only and is for non-commercial use (45 requests a minute);
+// set IPINFO_TOKEN to use an HTTPS provider instead, or GEO_PROVIDER=headers to use no third party.
 async function lookupGeo(ip: string | null, req: Request): Promise<{ country: string | null; city: string | null }> {
   const token = Deno.env.get("IPINFO_TOKEN");
-  if (ip && token) {
+  const provider = Deno.env.get("GEO_PROVIDER");
+  if (ip && provider !== "headers") {
     try {
-      const res = await fetch(`https://ipinfo.io/${ip}?token=${token}`, { signal: AbortSignal.timeout(2500) });
-      if (res.ok) {
-        const data = await res.json();
-        return { country: clip(data.country, 8), city: clip(data.city, 128) };
+      if (token) {
+        const res = await fetch(`https://ipinfo.io/${ip}?token=${token}`, { signal: AbortSignal.timeout(2500) });
+        if (res.ok) {
+          const data = await res.json();
+          return { country: clip(data.country, 8), city: clip(data.city, 128) };
+        }
+      } else {
+        const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,countryCode,city`, {
+          signal: AbortSignal.timeout(2500),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === "success") return { country: clip(data.countryCode, 8), city: clip(data.city, 128) };
+        }
       }
     } catch (error) {
       console.error("geo lookup failed", error);

@@ -40,7 +40,7 @@ About once a week, and when it opens, the app contacts a server hosted with Supa
   to "Don't share" removes the analytics fields from the server immediately.
 - **Erasure:** Settings → License & Privacy → Erase My Data on the Server deletes everything stored for your
   install and removes the email address from your license (the key itself stays valid). You can also write to [contact email].
-- **Processors:** Supabase (hosting, EU region) and ipinfo.io (looks up country and city from your IP address).
+- **Processors:** Supabase (hosting, EU region) and ip-api.com (looks up country and city from your IP address, only if you share analytics; the free service is contacted over plain HTTP, so [decide: switch to an HTTPS provider such as ipinfo.io before relying on this]).
 - **Retention:** [decide, for example: analytics fields are deleted after 24 months of inactivity].
 - **Your rights:** access, correction, erasure, restriction, portability, objection, and complaint to your
   data protection authority.
