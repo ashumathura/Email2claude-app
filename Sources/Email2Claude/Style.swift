@@ -205,3 +205,149 @@ struct TitledGroup<Content: View>: View {
         }
     }
 }
+
+// MARK: - Grouped rows (the look of macOS System Settings)
+
+/// A heading, a rounded group of rows, and a small note under it.
+struct FormSection<Content: View>: View {
+    let title: String?
+    var note: String?
+    var noteIsWarning = false
+    let content: Content
+
+    init(_ title: String? = nil, note: String? = nil, noteIsWarning: Bool = false, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.note = note
+        self.noteIsWarning = noteIsWarning
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let title {
+                Text(title).font(.subheadline.weight(.semibold)).padding(.leading, 2)
+            }
+            FormGroup { content }
+            if let note {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(noteIsWarning ? Color.orange : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 2)
+            }
+        }
+    }
+}
+
+/// The rounded white (dark: raised grey) box that holds rows separated by hairlines.
+struct FormGroup<Content: View>: View {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) { content }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Look.card, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Look.border.opacity(0.6)))
+    }
+}
+
+/// A hairline between two rows of a group.
+struct RowDivider: View {
+    var body: some View { Divider().padding(.leading, 14) }
+}
+
+/// One row of a group: the label (and a line of explanation) on the left, its control on the right.
+struct FormRow<Control: View>: View {
+    let label: String
+    var detail: String?
+    let control: Control
+
+    init(_ label: String, detail: String? = nil, @ViewBuilder control: () -> Control) {
+        self.label = label
+        self.detail = detail
+        self.control = control()
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                if let detail {
+                    Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 12)
+            control
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frame(minHeight: 38)
+    }
+}
+
+/// A radio choice as a row: a dot, a title and a line of explanation.
+struct RadioRow: View {
+    let title: String
+    var detail: String?
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                    .foregroundStyle(selected ? Brand.accent : Color.secondary)
+                    .font(.system(size: 15))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                    if let detail {
+                        Text(detail).font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// A pop-up button for a row: the system menu look, sized to its content.
+struct RowPicker<Value: Hashable, Options: View>: View {
+    @Binding var selection: Value
+    let options: Options
+
+    init(selection: Binding<Value>, @ViewBuilder options: () -> Options) {
+        _selection = selection
+        self.options = options()
+    }
+
+    var body: some View {
+        Picker("", selection: $selection) { options }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .fixedSize()
+    }
+}
+
+/// A multi-line text box with a thin border, for prompts.
+struct PromptEditor: View {
+    @Binding var text: String
+    var minHeight: CGFloat = 70
+
+    var body: some View {
+        TextEditor(text: $text)
+            .font(.body)
+            .scrollContentBackground(.hidden)
+            .frame(minHeight: minHeight)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 8)
+    }
+}

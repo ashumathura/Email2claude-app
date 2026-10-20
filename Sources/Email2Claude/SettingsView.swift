@@ -13,7 +13,7 @@ private enum SettingsTabID: String, CaseIterable, Identifiable {
         case .prompts: return "Prompts"
         case .activity: return "Activity"
         case .general: return "General"
-        case .account: return "License & Privacy"
+        case .account: return "License"
         case .about: return "About"
         }
     }
@@ -124,6 +124,7 @@ private struct RoutesTab: View {
     @State private var testAddress = ""
     @State private var testField: MatchField = .to
     @State private var showsHelp = false
+    @State private var showsTester = true
 
     private struct EditorItem: Identifiable {
         let id = UUID()
@@ -136,41 +137,56 @@ private struct RoutesTab: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            PageHeader("Routes", subtitle: "Decide which Claude chat each email goes to, so Claude remembers each client or topic.") {
-                Button { editor = EditorItem(route: Route(domain: ""), isNew: true) } label: {
-                    Label("Add route", systemImage: "plus")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Decide which Claude chat each email goes to, so Claude remembers each client or topic. A full address beats a domain, and higher in the list wins.")
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("How routes work") { showsHelp = true }
+                            .buttonStyle(.link)
+                            .popover(isPresented: $showsHelp, arrowEdge: .bottom) { explainer.padding(16).frame(width: 440) }
+                    }
+                    Spacer(minLength: 0)
+                    Button("Add Route…") { editor = EditorItem(route: Route(domain: ""), isNew: true) }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-            }
 
-            TipBox(.info) {
-                Text("**3 rules:** a full address beats a domain · higher in the list wins · no match, the app asks.")
-                    .font(.callout)
-                Spacer(minLength: 8)
-                Button("How routes work") { showsHelp = true }
-                    .popover(isPresented: $showsHelp, arrowEdge: .bottom) { explainer.padding(16).frame(width: 440) }
-            }
+                if let domain = store.config.domainsWithoutFromRoute.first {
+                    TipBox(.warning, symbol: "exclamationmark.triangle.fill") {
+                        let more = store.config.domainsWithoutFromRoute.count - 1
+                        (Text("Replies from \(domain) have no route. ").fontWeight(.semibold)
+                         + Text("Mail you receive from them opens a new chat."
+                                + (more > 0 ? " \(more) more domain\(more == 1 ? "" : "s") are in the same situation." : "")))
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Button("Add a From route") {
+                            editor = EditorItem(route: Route(domain: domain, matchOn: .from), isNew: true)
+                        }
+                        .buttonStyle(.link)
+                    }
+                }
 
-            routeList
+                routeList
+                tester
 
-            Text("Double-click a route to edit it. Select one and press Delete to remove it.")
-                .font(.caption).foregroundStyle(.secondary)
-
-            tester
-
-            Toggle(isOn: $store.config.askForUnknownRoutes) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Ask where to send emails that have no route").fontWeight(.semibold)
+                VStack(alignment: .leading, spacing: 3) {
+                    Toggle(isOn: $store.config.askForUnknownRoutes) {
+                        Text("Ask where to send emails that have no route").fontWeight(.semibold)
+                    }
+                    .toggleStyle(.checkbox)
                     Text(store.config.askForUnknownRoutes
                          ? "A window asks what should happen with an email that has none."
-                         : "Emails without a route start a new chat without asking.")
+                         : "If off, they open a new chat without asking.")
                         .font(.caption).foregroundStyle(.secondary)
+                        .padding(.leading, 20)
                 }
             }
+            .padding(24)
         }
-        .padding(24)
         .sheet(item: $editor) { item in
             RouteEditorView(
                 title: item.isNew ? "Add Route" : "Edit Route",
@@ -191,44 +207,56 @@ private struct RoutesTab: View {
     }
 
     private var routeList: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("When an email is…").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Spacer()
-                Text("Drag to reorder. Higher wins.").font(.caption).foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            Divider()
-            List(selection: $selection) {
-                ForEach(store.config.routes) { route in
-                    RouteRow(
-                        route: route,
-                        overlaps: store.config.routes.filter { Router.overlaps(route, $0) },
-                        onEdit: { editor = EditorItem(route: route, isNew: false) })
-                        .tag(route.id)
-                        .contextMenu {
-                            Button("Edit…") { editor = EditorItem(route: route, isNew: false) }
-                            Button("Delete", role: .destructive) { remove(route) }
-                        }
+        VStack(alignment: .leading, spacing: 6) {
+            Text("When an email is…").font(.subheadline.weight(.semibold)).padding(.leading, 2)
+            FormGroup {
+                List(selection: $selection) {
+                    ForEach(store.config.routes) { route in
+                        RouteRow(
+                            route: route,
+                            overlaps: store.config.routes.filter { Router.overlaps(route, $0) },
+                            onEdit: { editor = EditorItem(route: route, isNew: false) })
+                            .tag(route.id)
+                            .contextMenu {
+                                Button("Edit…") { editor = EditorItem(route: route, isNew: false) }
+                                Button("Delete", role: .destructive) { remove(route) }
+                            }
+                    }
+                    .onMove { store.config.routes.move(fromOffsets: $0, toOffset: $1) }
                 }
-                .onMove { store.config.routes.move(fromOffsets: $0, toOffset: $1) }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .onDeleteCommand { if let route = selectedRoute { remove(route) } }
-            .overlay {
-                if store.config.routes.isEmpty {
-                    Text("No routes yet.\nThey are added when you send an email that has none, or with Add route.")
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.secondary)
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .frame(height: CGFloat(max(store.config.routes.count, 2)) * 58)
+                .onDeleteCommand { if let route = selectedRoute { remove(route) } }
+                .overlay {
+                    if store.config.routes.isEmpty {
+                        Text("No routes yet.\nThey are added when you send an email that has none, or with Add Route.")
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                Divider()
+                HStack(spacing: 8) {
+                    Button { editor = EditorItem(route: Route(domain: ""), isNew: true) } label: {
+                        Image(systemName: "plus").frame(width: 18, height: 18)
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .help("Add a route")
+                    Button { if let route = selectedRoute { remove(route) } } label: {
+                        Image(systemName: "minus").frame(width: 18, height: 18)
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .disabled(selectedRoute == nil)
+                    .help("Remove the selected route")
+                    Spacer()
+                    Text("Drag to reorder. Higher wins.").font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
             }
         }
-        .frame(minHeight: 150)
-        .background(Look.card, in: RoundedRectangle(cornerRadius: Look.cardRadius, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Look.cardRadius, style: .continuous).stroke(Look.border))
-        .clipShape(RoundedRectangle(cornerRadius: Look.cardRadius, style: .continuous))
     }
 
     private var explainer: some View {
@@ -252,25 +280,28 @@ private struct RoutesTab: View {
 
     /// Shows which route an email would get, so the order and the precedence rules can be checked.
     private var tester: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Test your routes").font(.headline)
-                HStack(spacing: 10) {
-                    Text("Email address").fontWeight(.medium)
-                    TextField("", text: $testAddress, prompt: Text("anna@company.com"))
-                        .textFieldStyle(.roundedBorder)
-                    Picker("", selection: $testField) {
-                        Text("Sent to").tag(MatchField.to)
-                        Text("Received from").tag(MatchField.from)
+        FormGroup {
+            DisclosureGroup(isExpanded: $showsTester) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        TextField("", text: $testAddress, prompt: Text("anna@company.com"))
+                            .textFieldStyle(.roundedBorder)
+                        Picker("", selection: $testField) {
+                            Text("Sent to").tag(MatchField.to)
+                            Text("Received from").tag(MatchField.from)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .fixedSize()
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
+                    Text(testResult).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
-                TipBox(.info) {
-                    Text(testResult).font(.callout).fixedSize(horizontal: false, vertical: true)
-                }
+                .padding(.top, 8)
+            } label: {
+                Text("Test your routes").fontWeight(.medium)
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
         }
     }
 
@@ -347,7 +378,11 @@ private struct RouteRow: View {
                     .foregroundStyle(.orange)
                     .help("Overlaps with " + overlaps.map(\.domain).joined(separator: ", ") + ". The one higher in the list wins.")
             }
-            Button("Edit", action: onEdit).controlSize(.small)
+            Button(action: onEdit) {
+                Image(systemName: "chevron.right").foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Edit this route")
         }
         .padding(.vertical, 6)
         .contentShape(Rectangle())
@@ -404,7 +439,7 @@ private struct ActionRow: View {
                 Text(name.isEmpty ? placeholder : name)
                     .foregroundStyle(name.isEmpty ? .secondary : .primary)
                 if !configured {
-                    Text("Set up: add a name and a prompt").font(.caption).foregroundStyle(.orange)
+                    Text("Add a name and prompt").font(.caption).foregroundStyle(.orange)
                 }
             }
             Spacer()
@@ -445,114 +480,93 @@ private struct ActionDetail: View {
         }
     }
 
-    private func titled<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.headline)
-            content()
-        }
-    }
-
     private var menuItemSection: some View {
-        titled("Menu item") {
-            Card {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Name")
-                        TextField("", text: name, prompt: Text(action.placeholderName))
-                            .textFieldStyle(.roundedBorder)
-                            .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: 260)
-                    }
-                    Divider()
-                    HStack {
-                        Text("Shortcut")
-                        Spacer()
-                        ShortcutChip(text: action.shortcutLabel)
-                    }
-                }
+        FormSection(
+            "Menu item",
+            note: store.config.isConfigured(action)
+                ? "Shown under Send to Claude in the menu bar."
+                : "This action appears in the menu once it has a name\(mode.wrappedValue == .prompt ? " and a prompt" : "").",
+            noteIsWarning: !store.config.isConfigured(action)) {
+            FormRow("Name") {
+                TextField("", text: name, prompt: Text(action.placeholderName))
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: 260)
             }
-            if store.config.isConfigured(action) {
-                Text("Shown under Send to Claude in the menu bar.").font(.caption).foregroundStyle(.secondary)
-            } else {
-                Text("This action appears in the menu once it has a name\(mode.wrappedValue == .prompt ? " and a prompt" : "").")
-                    .font(.caption).foregroundStyle(.orange)
-            }
+            RowDivider()
+            FormRow("Shortcut") { ShortcutChip(text: action.shortcutLabel) }
         }
     }
 
     private var modeSection: some View {
-        titled("What happens to the email") {
-            HStack(alignment: .top, spacing: 10) {
-                OptionCard(
+        VStack(alignment: .leading, spacing: 6) {
+            FormSection("What happens to the email") {
+                RadioRow(
                     title: ActionMode.pasteOnly.title,
                     detail: "You type your own message. Nothing is sent for you.",
                     selected: mode.wrappedValue == .pasteOnly) { mode.wrappedValue = .pasteOnly }
-                OptionCard(
+                RowDivider()
+                RadioRow(
                     title: ActionMode.prompt.title,
                     detail: "Your prompt goes above the email, then both are sent to the routed chat.",
                     selected: mode.wrappedValue == .prompt) { mode.wrappedValue = .prompt }
             }
             if mode.wrappedValue == .prompt {
-                TipBox(.info) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(store.config.autoSend
-                             ? "**Auto-send is on**, so Claude starts working straight away. The email's From, To, Cc, date, subject, body and attachments are always included."
-                             : "**Auto-send is off**, so the message waits in Claude's message box until you press Return. The email's From, To, Cc, date, subject, body and attachments are always included.")
-                            .font(.callout)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Button("Change in General", action: openGeneral)
-                    }
+                HStack(spacing: 6) {
+                    Text(store.config.autoSend
+                         ? "Auto-send is on, so Claude starts working straight away."
+                         : "Auto-send is off, so the message waits in Claude's message box until you press Return.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Change in General", action: openGeneral).buttonStyle(.link).font(.caption)
                 }
+                .padding(.horizontal, 2)
             } else {
-                TipBox(.info) {
-                    Text("The email is pasted into the routed Claude chat and nothing else happens. Type your own request in Claude, then press Return. Its From, To, Cc, date, subject, body and attachments are included.")
-                        .font(.callout)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text("The email is pasted into the routed Claude chat and nothing else happens. Type your own request in Claude, then press Return.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 2)
             }
         }
     }
 
     private var promptSection: some View {
-        titled("Prompt") {
-            TextEditor(text: prompt)
-                .font(.body)
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 130)
-                .padding(8)
-                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Look.border))
-            HStack(spacing: 8) {
-                Text("Start from:").font(.callout).foregroundStyle(.secondary)
-                ForEach([Action.reply, .summary, .research], id: \.self) { preset in
-                    Button(preset.defaultName) { prompt.wrappedValue = preset.defaultInstruction }
-                        .controlSize(.small)
+        VStack(alignment: .leading, spacing: 16) {
+            FormSection(
+                "Prompt",
+                note: "Placed above the email in Claude. The route prompt, if the route has one, follows it. The email's From, To, Cc, date, subject, body and attachments are always included.") {
+                PromptEditor(text: prompt, minHeight: 130)
+                RowDivider()
+                HStack(spacing: 8) {
+                    Text("Start from").foregroundStyle(.secondary)
+                    ForEach([Action.reply, .summary, .research], id: \.self) { preset in
+                        Button(preset.defaultName) { prompt.wrappedValue = preset.defaultInstruction }
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.capsule)
+                            .controlSize(.small)
+                    }
+                    Spacer(minLength: 0)
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
             }
-            Text("Placed above the email in Claude. The route prompt, if the route has one, follows it.")
-                .font(.caption).foregroundStyle(.secondary)
-            Card {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("What Claude receives").font(.headline)
-                    receivesRow("1", "This prompt", tinted: true)
-                    receivesRow("2", "The route prompt (if any)", tinted: false)
-                    receivesRow("3", "The email: From, To, Cc, date, subject, body and attachments", tinted: false)
-                }
+            FormSection("What Claude receives") {
+                receivesRow("1", "This prompt")
+                RowDivider()
+                receivesRow("2", "The route prompt (if any)")
+                RowDivider()
+                receivesRow("3", "The email: From, To, Cc, date, subject, body and attachments")
             }
         }
     }
 
-    private func receivesRow(_ number: String, _ text: String, tinted: Bool) -> some View {
-        HStack(spacing: 8) {
-            Text(number).font(.callout.weight(.semibold)).foregroundStyle(Brand.accent)
-            Text(text).font(.callout)
+    private func receivesRow(_ number: String, _ text: String) -> some View {
+        HStack(spacing: 10) {
+            Text(number).font(.callout.weight(.semibold)).foregroundStyle(Brand.accent).frame(width: 14)
+            Text(text)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(
-            tinted ? Brand.accent.opacity(0.10) : Color.secondary.opacity(0.08),
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 }
 
