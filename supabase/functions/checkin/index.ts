@@ -196,15 +196,18 @@ Deno.serve(async (req) => {
     // --- Record the check-in -------------------------------------------------------------
     const { data: existing, error: readError } = await supabase
       .from("installs")
-      .select("last_used_at, analytics_consent")
+      .select("last_used_at, analytics_consent, app_version")
       .eq("device_id", deviceId)
       .maybeSingle();
     if (readError) throw readError;
 
     const consentChanged = !existing || existing.analytics_consent !== analytics;
     const recentlyWritten = existing && now.getTime() - new Date(existing.last_used_at).getTime() < MIN_REWRITE_SECONDS * 1000;
+    // An update installs and relaunches within a minute of the check that found it, so the new
+    // version's first check-in would otherwise be skipped as "recent" and the old version would stay on record.
+    const versionChanged = analytics && !!existing && existing.app_version !== appVersion;
 
-    if (consentChanged || !recentlyWritten) {
+    if (consentChanged || versionChanged || !recentlyWritten) {
       const ip = analytics ? clientIp(req) : null;
       const geo = analytics ? await lookupGeo(ip, req) : { country: null, city: null };
       const row: Record<string, unknown> = {
