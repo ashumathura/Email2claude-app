@@ -18,6 +18,7 @@ final class UpdateManager: ObservableObject {
     private let store: ConfigStore
     private var recheckLoop: Task<Void, Never>?
     private var licenseCheck: Task<Void, Never>?
+    private var manualCheck: Task<Void, Never>?
     private let interval: TimeInterval = 7 * 24 * 3600
     private let notifiedBlockedKey = "notifiedBlockedVersion"
 
@@ -42,7 +43,14 @@ final class UpdateManager: ObservableObject {
     }
 
     func checkNow() {
-        Task { await run(event: .updateCheck, manual: true) }
+        guard !busy else { return }
+        // Show a window straight away: the server can take several seconds to answer.
+        let window = CheckingWindow { [weak self] in self?.manualCheck?.cancel() }
+        window.show()
+        manualCheck = Task {
+            await run(event: .updateCheck, manual: true, checking: window)
+            window.close()
+        }
     }
 
     /// Called when the license key field changes: once the key looks complete, check it
@@ -120,7 +128,7 @@ final class UpdateManager: ObservableObject {
             licenseKey: config.licenseKey.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
-    private func run(event: CheckinRequest.Event, manual: Bool, wantsUpdate: Bool? = nil, quiet: Bool = false) async {
+    private func run(event: CheckinRequest.Event, manual: Bool, wantsUpdate: Bool? = nil, quiet: Bool = false, checking: CheckingWindow? = nil) async {
         guard !busy else { return }
         let wants = wantsUpdate ?? (manual || updateCheckDue)
         // Timer ticks only matter when the weekly check has come due.
@@ -130,11 +138,17 @@ final class UpdateManager: ObservableObject {
         defer { busy = false }
         do {
             let response = try await CheckinClient.send(makeRequest(event: event, wantsUpdate: wants))
+            checking?.close()
             guard wants else { return }
             store.config.lastUpdateCheck = Date()
             store.config.lastLicenseStatus = response.license
             await handle(response, manual: manual, quiet: quiet)
         } catch {
+            checking?.close()
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled {
+                status = "Update check cancelled."
+                return
+            }
             Log.write("check-in failed: \(error.localizedDescription)")
             if wants { status = "Couldn't check for updates: \(error.localizedDescription)" }
             if manual { alert("Couldn't check for updates", error.localizedDescription) }
@@ -297,6 +311,53 @@ final class UpdateProgressWindow {
             bar.isIndeterminate = true
             bar.startAnimation(nil)
         }
+    }
+
+    func close() { panel.orderOut(nil) }
+}
+
+/// Shown the moment "Check for Updates" is clicked, with a spinner and a way to give up if the server is stuck.
+@MainActor
+final class CheckingWindow {
+    private let panel: NSPanel
+    private let onCancel: () -> Void
+    private var cancelButton: NSButton!
+
+    init(onCancel: @escaping () -> Void) {
+        self.onCancel = onCancel
+        panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 340, height: 110), styleMask: [.titled], backing: .buffered, defer: false)
+        panel.title = "MailtoChat"
+        panel.level = .floating
+        panel.isReleasedWhenClosed = false
+
+        let spinner = NSProgressIndicator()
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.startAnimation(nil)
+        let label = NSTextField(labelWithString: "Checking for updates…")
+        let row = NSStackView(views: [spinner, label])
+        row.spacing = 10
+
+        cancelButton = NSButton(title: "Cancel", target: self, action: #selector(cancel))
+        cancelButton.keyEquivalent = "\u{1b}"
+        let stack = NSStackView(views: [row, cancelButton])
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 14
+        stack.edgeInsets = NSEdgeInsets(top: 22, left: 20, bottom: 18, right: 20)
+        panel.contentView = stack
+    }
+
+    @objc private func cancel() {
+        cancelButton.isEnabled = false
+        onCancel()
+    }
+
+    func show() {
+        panel.center()
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
     }
 
     func close() { panel.orderOut(nil) }
