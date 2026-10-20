@@ -4,13 +4,13 @@
 # Optional environment (all three groups needed for a notarized build):
 #   SIGN_IDENTITY   "Developer ID Application: Name (TEAMID)"; unset = ad-hoc signing
 #   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD   notarytool credentials
-#   VERSION         defaults to 0.1.0
+#   VERSION         defaults to 1.0
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 EXECUTABLE=Email2Claude
 DISPLAY_NAME="MailtoChat"
-VERSION=${VERSION:-0.1.0}
+VERSION=${VERSION:-1.0}
 IDENTITY=${SIGN_IDENTITY:--}
 APP="dist/$DISPLAY_NAME.app"
 DMG="dist/MailtoChat.dmg"

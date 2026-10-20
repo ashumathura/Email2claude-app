@@ -326,6 +326,9 @@ final class CoreTests: XCTestCase {
     func testVersionOrdering() {
         XCTAssertTrue(AppVersion.isNewer("0.10.0", than: "0.9.2"))
         XCTAssertTrue(AppVersion.isNewer("1.0", than: "0.9.9"))
+        XCTAssertTrue(AppVersion.isNewer("1.0", than: "0.1.12"), "the first 1.0 release replaces the 0.1.x builds")
+        XCTAssertTrue(AppVersion.isNewer("1.1", than: "1.0"))
+        XCTAssertTrue(AppVersion.isNewer("1.10", than: "1.9"), "numbers compare as numbers, not text")
         XCTAssertFalse(AppVersion.isNewer("1.0.0", than: "1.0"))
         XCTAssertFalse(AppVersion.isNewer("0.1.0", than: "0.2.0"))
         XCTAssertEqual(AppVersion.compare("2.0.1", "2.0.1"), .orderedSame)
