@@ -171,7 +171,7 @@ final class UpdateManager: ObservableObject {
                 UserDefaults.standard.set(blocked.version, forKey: notifiedBlockedKey)
                 let panel = NSAlert()
                 panel.messageText = "Version \(blocked.version) is available"
-                panel.informativeText = "It can't be downloaded because \(Checkin.explain(licenseStatus: blocked.reason)). Enter a valid license key in Settings → License & Privacy."
+                panel.informativeText = "It can't be downloaded because \(Checkin.explain(licenseStatus: blocked.reason)). Enter a valid license key in Settings → License."
                 panel.addButton(withTitle: "Open Settings")
                 panel.addButton(withTitle: "Not Now")
                 NSApp.activate(ignoringOtherApps: true)

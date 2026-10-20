@@ -26,30 +26,22 @@ struct EmailSignupView: View {
                     }
                 }
 
-                TextField("you@example.com", text: $email)
-                    .textFieldStyle(.roundedBorder)
-                    .controlSize(.large)
-                    .disabled(working)
-                    .onSubmit(submit)
-                    .onChange(of: email) { _ in errorText = nil }
-
-                if let errorText {
-                    Label(errorText, systemImage: "exclamationmark.triangle.fill")
-                        .font(.callout)
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
+                FormSection(
+                    nil,
+                    note: errorText ?? PrivacyText.emailNote,
+                    noteIsWarning: errorText != nil) {
+                    FormRow("Email address") {
+                        TextField("", text: $email, prompt: Text("you@example.com"))
+                            .textFieldStyle(.plain)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 300)
+                            .disabled(working)
+                            .onSubmit(submit)
+                            .onChange(of: email) { _ in errorText = nil }
+                    }
                 }
 
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "lock.fill").foregroundStyle(Brand.accent)
-                    Text(PrivacyText.emailNote)
-                        .font(.callout)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(12)
-                .background(Brand.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-                Text("Without a key the app keeps working, but it can't download updates. You can get a key later in Settings → License & Privacy.")
+                Text("Without a key the app keeps working, but it can't download updates. You can get a key later in Settings → License.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -75,7 +67,8 @@ struct EmailSignupView: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
         }
-        .frame(width: 560, height: 470)
+        .frame(width: 560, height: 440)
+        .background(Look.page)
         .tint(Brand.accent)
     }
 
