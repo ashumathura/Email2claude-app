@@ -31,7 +31,7 @@ A route sends an email to a place in Claude. Each route looks at **one field**, 
 
 A full address beats a domain. Otherwise the route higher in the list wins; drag to reorder, and use **Test your routes** to see which one applies. Overlapping domain rules (`acme.com` and `mail.acme.com`) are flagged.
 Each route sends to an **existing chat**, a **new chat in a project**, a **new chat**, or an **incognito chat**,
-and can carry **standing instructions** (for example "Always reply formally, in Dutch.") that are added to the prompt after the
+and can carry a **route prompt** (for example "Always reply formally, in Dutch.") that is added to the prompt after the
 action's own prompt. Actions set to paste only add no prompt, so they are not affected. The route editor previews exactly what Claude receives.
 
 If an email matches no route, a window asks where it should go (save it, use it once, or "don't ask again, always

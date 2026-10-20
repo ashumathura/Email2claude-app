@@ -12,7 +12,7 @@ enum ChooserResult {
 /// The modal window shown when an email matches no route yet.
 @MainActor
 enum RouteChooser {
-    /// - Parameter previewPrompt: the action prompt the preview shows standing instructions being added to.
+    /// - Parameter previewPrompt: the action prompt the preview shows the route prompt being added to.
     static func ask(suggestion: Router.RouteSuggestion, previewPrompt: String) -> ChooserResult {
         var result = ChooserResult.cancel
         let address = suggestion.address(for: suggestion.field) ?? ""

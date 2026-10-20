@@ -46,7 +46,7 @@ public struct Route: Codable, Equatable, Identifiable {
     public var name: String?
     /// A claude.ai or claude:// link to the chat or project. Preferred over the name when present.
     public var url: String?
-    /// Standing instructions added to the prompt whenever this route is used, for example
+    /// Route prompt added to the prompt whenever this route is used, for example
     /// "Always reply formally, in Dutch."
     public var instructions: String?
 
