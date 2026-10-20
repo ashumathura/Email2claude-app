@@ -2,7 +2,7 @@ name: Release
 
 # Builds, signs and notarizes the DMG, uploads it to the private Supabase "releases" bucket and
 # records it in the releases table. It stays unpublished (invisible to the app) until you publish it:
-#   update public.releases set published = true where version = '0.2.0';
+#   update public.releases set published = true where version = '1.1';
 # or tick "publish" when running this workflow by hand.
 
 on:
@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version, e.g. 0.2.0 (a tag push uses the tag name)"
+        description: "Version, e.g. 1.1 (two numbers; a tag push uses the tag name)"
         required: true
       notes:
         description: "Release notes shown in the update prompt"

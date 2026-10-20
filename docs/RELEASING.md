@@ -36,13 +36,13 @@ The lookup sends the user's IP to ipinfo.io, so name them in the privacy policy 
 
 ## Cutting a release
 
-1. Decide the version (for example `0.2.0`) and tag it: `git tag v0.2.0 && git push origin v0.2.0`.
+1. Decide the version and tag it: `git tag v1.1 && git push origin v1.1`. Versions have two numbers, `1.0`, `1.1`, `1.2`, and only the number after the dot goes up for a normal release (1.0 is the first public version; before it the app used `0.1.x`). The update check and the server compare versions number by number, so `1.0` is newer than `0.1.12` and `1.10` is newer than `1.9`.
    Or run the **Release** workflow by hand and fill in the version and release notes.
 2. The workflow tests, builds, signs, notarizes, uploads the DMG to the private `releases` storage bucket
    and records it in the `releases` table as **unpublished**.
 3. Install that build yourself from the workflow artifact and try it.
 4. Publish it, which makes the app offer it: tick "publish" when running the workflow, or run
-   `update public.releases set published = true where version = '0.2.0';` in the Supabase SQL editor.
+   `update public.releases set published = true where version = '1.1';` in the Supabase SQL editor.
    To pull a release, set `published = false`.
 
 Users with a valid license are offered the update at their next weekly check (or Check for Updates…).
