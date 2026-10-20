@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Email2ClaudeCore
 
 /// Best-effort access to Claude's UI through the Accessibility API. Claude is an Electron app with
 /// no scripting interface, so this walks its UI tree. The heuristics here (sidebar width, row
