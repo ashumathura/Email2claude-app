@@ -188,7 +188,7 @@ private struct RoutesTab: View {
                 initial: item.route,
                 offersOnce: false,
                 previewPrompt: store.config.instruction(for: .reply),
-                loadChats: { ClaudeSidebar.chatTitles() },
+                loadChats: { ClaudeSidebar.loadChatList() },
                 onSave: { route in
                     if item.isNew { store.config.upsert(route) } else { store.config.replace(item.route, with: route) }
                     var saved = route

@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Email2ClaudeCore
 
 /// Best-effort access to Claude's UI through the Accessibility API. Claude is an Electron app with
 /// no scripting interface, so this walks its UI tree. The heuristics here (sidebar width, row
@@ -31,12 +32,28 @@ enum ClaudeSidebar {
 
     // MARK: - Chats and projects
 
-    /// Chat titles currently visible in the sidebar, top to bottom. Empty if Claude isn't
-    /// running, Accessibility isn't granted, or the layout isn't recognised.
-    static func chatTitles() -> [String] {
-        guard ClaudeBridge.accessibilityGranted(prompt: false), let app = runningApp else { return [] }
-        var seen = Set<String>()
-        return collect(app, scope: .sidebar).filter(isChatRow).map(\.title).filter { seen.insert($0).inserted }
+    /// What reading the sidebar produced, with a plain-language reason when there is nothing to show.
+    struct ChatListResult {
+        var list: ChatList
+        var problem: String?
+        var date = Date()
+    }
+
+    /// The chats currently visible in Claude's sidebar, grouped by project. Empty, with a reason, if
+    /// Claude isn't running, Accessibility isn't granted, or the layout isn't recognised.
+    static func loadChatList() -> ChatListResult {
+        guard ClaudeBridge.accessibilityGranted(prompt: false) else {
+            return ChatListResult(
+                list: ChatList(),
+                problem: "MailtoChat needs Accessibility permission to read Claude's chat list. Turn it on in System Settings.")
+        }
+        guard let app = runningApp else {
+            return ChatListResult(list: ChatList(), problem: "Claude isn't running. Open the Claude app, then refresh.")
+        }
+        let list = ChatList.parse(collect(app, scope: .sidebar).filter(isChatRow).map(\.title))
+        return ChatListResult(
+            list: list,
+            problem: list.isEmpty ? "Claude is open, but no chats were found. Keep its sidebar visible, then refresh." : nil)
     }
 
     /// Clicks the sidebar row with this title. Returns false if no such row was found.

@@ -37,7 +37,7 @@ struct RouteEditorView: View {
     let offersOnce: Bool
     /// The prompt that the preview shows the route prompt being added to.
     let previewPrompt: String
-    let loadChats: () -> [String]
+    let loadChats: () -> ClaudeSidebar.ChatListResult
     let onSave: (Route) -> Void
     let onOnce: ((Route) -> Void)?
     let onNeverAsk: (() -> Void)?
@@ -51,13 +51,18 @@ struct RouteEditorView: View {
     @State private var name: String
     @State private var url: String
     @State private var instructions: String
-    @State private var chats: [String]
+    @State private var chatList: ChatList
+    @State private var chatsProblem: String?
+    @State private var chatsLoadedAt: Date
+    @State private var isRefreshing = false
+    /// Not in the picker, so the project name is typed.
+    @State private var typingProjectName: Bool
     @State private var neverAsk = false
 
     init(
         title: String, subtitle: String, initial: Route, suggestions: Router.RouteSuggestion? = nil,
         offersOnce: Bool, previewPrompt: String = Action.reply.defaultInstruction,
-        loadChats: @escaping () -> [String],
+        loadChats: @escaping () -> ClaudeSidebar.ChatListResult,
         onSave: @escaping (Route) -> Void, onOnce: ((Route) -> Void)? = nil,
         onNeverAsk: (() -> Void)? = nil, onCancel: @escaping () -> Void
     ) {
@@ -81,7 +86,14 @@ struct RouteEditorView: View {
         _name = State(initialValue: initial.name ?? "")
         _url = State(initialValue: initial.url ?? "")
         _instructions = State(initialValue: initial.instructions ?? "")
-        _chats = State(initialValue: loadChats())
+        let loaded = loadChats()
+        _chatList = State(initialValue: loaded.list)
+        _chatsProblem = State(initialValue: loaded.problem)
+        _chatsLoadedAt = State(initialValue: loaded.date)
+        let savedProject = (initial.name ?? "").trimmingCharacters(in: .whitespaces)
+        _typingProjectName = State(
+            initialValue: initial.kind == .project && (loaded.list.projects.isEmpty
+                || (!savedProject.isEmpty && !loaded.list.projects.contains(savedProject))))
     }
 
     // MARK: Derived values
@@ -132,9 +144,38 @@ struct RouteEditorView: View {
         }
     }
 
-    private var chatChoices: [String] {
+    /// The chat saved on this route, if Claude's current sidebar doesn't list it (scrolled out of view, or renamed).
+    private var savedChatNotListed: String? {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
-        return trimmed.isEmpty || chats.contains(trimmed) ? chats : [trimmed] + chats
+        return trimmed.isEmpty || chatList.chats.contains(trimmed) ? nil : trimmed
+    }
+
+    private func refreshChats() {
+        isRefreshing = true
+        // Let the button show its busy state before the (brief) read of Claude's sidebar.
+        DispatchQueue.main.async {
+            let loaded = loadChats()
+            chatList = loaded.list
+            chatsProblem = loaded.problem
+            chatsLoadedAt = loaded.date
+            isRefreshing = false
+        }
+    }
+
+    private var chatsStatus: Text {
+        if let chatsProblem { return Text(chatsProblem) }
+        if kind == .project {
+            let time = chatsLoadedAt.formatted(date: .omitted, time: .standard)
+            let count = chatList.projects.count
+            return count == 0
+                ? Text("No projects found in Claude's sidebar. Pin one there, refresh, or type its name.")
+                : Text("Updated \(time): \(count) project\(count == 1 ? "" : "s")")
+        }
+        let count = chatList.chats.count
+        let time = chatsLoadedAt.formatted(date: .omitted, time: .standard)
+        let projects = chatList.projects.count
+        let scope = projects > 0 ? " in \(projects) project\(projects == 1 ? "" : "s") and recents" : ""
+        return Text("Updated \(time): \(count) chat\(count == 1 ? "" : "s")\(scope)")
     }
 
     private var whoPhrase: String {
@@ -283,17 +324,74 @@ struct RouteEditorView: View {
         switch kind {
         case .chat:
             Picker("Chat", selection: $name) {
-                Text(chatChoices.isEmpty ? "No chats found" : "Choose a chat…").tag("")
-                ForEach(chatChoices, id: \.self) { Text($0).tag($0) }
+                Text(chatList.isEmpty ? "No chats found" : "Choose a chat…").tag("")
+                if let saved = savedChatNotListed {
+                    Section("Saved on this route") { Text(saved).tag(saved) }
+                }
+                ForEach(chatList.groups) { group in
+                    Section(group.project.map { "In project: \($0)" } ?? (chatList.projects.isEmpty ? "Chats" : "Recent chats")) {
+                        ForEach(group.chats, id: \.self) { Text($0).tag($0) }
+                    }
+                }
             }
-            Button("Refresh Chat List") { chats = loadChats() }
-                .buttonStyle(.link)
+            refreshRow(buttonTitle: "Refresh Chat List")
             linkField(placeholder: "https://claude.ai/chat/…", label: "Chat link")
         case .project:
-            TextField("Project name", text: $name, prompt: Text("Exactly as shown in Claude"))
+            if chatList.projects.isEmpty {
+                TextField("Project name", text: $name, prompt: Text("Exactly as shown in Claude"))
+            } else {
+                Picker("Project", selection: projectSelection) {
+                    Text("Choose a project…").tag("")
+                    ForEach(chatList.projects, id: \.self) { Text($0).tag($0) }
+                    Divider()
+                    Text("Other (type its name)…").tag(Self.otherProject)
+                }
+                if showsTypedProjectName {
+                    TextField("Project name", text: $name, prompt: Text("Exactly as shown in Claude"))
+                }
+            }
+            refreshRow(buttonTitle: "Refresh Project List")
             linkField(placeholder: "https://claude.ai/project/…", label: "Project link")
         case .newChat, .incognito:
             EmptyView()
+        }
+    }
+
+    private static let otherProject = "\u{1}other"
+
+    /// The name is typed when the user chose Other, or when it isn't one of the listed projects.
+    private var showsTypedProjectName: Bool {
+        typingProjectName || (!name.isEmpty && !chatList.projects.contains(name))
+    }
+
+    /// The project picker's value: a listed project, or "Other" while the name is typed.
+    private var projectSelection: Binding<String> {
+        Binding(
+            get: { showsTypedProjectName ? Self.otherProject : name },
+            set: { choice in
+                if choice == Self.otherProject {
+                    typingProjectName = true
+                    if chatList.projects.contains(name) { name = "" }
+                } else {
+                    typingProjectName = false
+                    name = choice
+                }
+            })
+    }
+
+    private func refreshRow(buttonTitle: String) -> some View {
+        HStack(spacing: 8) {
+            Button { refreshChats() } label: {
+                Label(buttonTitle, systemImage: "arrow.clockwise")
+            }
+            .controlSize(.small)
+            .disabled(isRefreshing)
+            if isRefreshing { ProgressView().controlSize(.small) }
+            chatsStatus
+                .font(.caption)
+                .foregroundStyle(chatsProblem == nil ? Color.secondary : Color.red)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
     }
 

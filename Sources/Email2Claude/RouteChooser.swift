@@ -28,7 +28,7 @@ enum RouteChooser {
             suggestions: suggestion,
             offersOnce: true,
             previewPrompt: previewPrompt,
-            loadChats: { ClaudeSidebar.chatTitles() },
+            loadChats: { ClaudeSidebar.loadChatList() },
             onSave: { result = .save($0); NSApp.stopModal() },
             onOnce: { result = .once($0); NSApp.stopModal() },
             onNeverAsk: { result = .alwaysNewChat; NSApp.stopModal() },
