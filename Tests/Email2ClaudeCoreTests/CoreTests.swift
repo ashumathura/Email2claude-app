@@ -487,6 +487,40 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(Route(domain: "a.com", kind: .incognito).destinationChip, "Incognito chat")
     }
 
+    func testThreadSubjectsIgnoreReplyPrefixes() {
+        XCTAssertEqual(MailThread.normalizedSubject("RE:  Re: Fwd: Employment   Contract"), "employment contract")
+        XCTAssertEqual(MailThread.normalizedSubject("AW: SV: Offerte"), "offerte")
+        XCTAssertEqual(MailThread.normalizedSubject("Reservation"), "reservation")
+    }
+
+    func testAThreadIsOneEmailWithItsNewestMessageRead() {
+        let me = ["me@example.com"]
+        let day = { (d: Double) in Date(timeIntervalSince1970: d * 86400) }
+        let messages = [
+            SelectedMessage(sender: "Anna <anna@acme.com>", subject: "RE: Contract", date: day(3), recipients: ["me@example.com"]),
+            SelectedMessage(sender: "me@example.com", subject: "Contract", date: day(1), recipients: ["anna@acme.com"]),
+            SelectedMessage(sender: "Hugo <hugo@acme.com>", subject: "Re: Contract", date: day(2), recipients: ["me@example.com", "anna@acme.com"]),
+        ]
+        let plan = MailThread.plan(for: messages, ownAddresses: me)
+        XCTAssertTrue(plan.isThread)
+        XCTAssertEqual(plan.primary, 0)
+        XCTAssertEqual(plan.attachmentSources, [0, 1, 2])
+
+        let oldestFirst = Array(messages.reversed())
+        XCTAssertEqual(MailThread.plan(for: oldestFirst, ownAddresses: me).primary, 2)
+    }
+
+    func testDifferentSubjectsOrUnconnectedPeopleAreSeparateEmails() {
+        let me = ["me@example.com"]
+        let a = SelectedMessage(sender: "a@x.com", subject: "Invoice", recipients: ["me@example.com"])
+        let b = SelectedMessage(sender: "b@y.com", subject: "Invoice", recipients: ["me@example.com"])
+        let c = SelectedMessage(sender: "a@x.com", subject: "Other", recipients: ["me@example.com"])
+        XCTAssertFalse(MailThread.plan(for: [a, b], ownAddresses: me).isThread)
+        XCTAssertFalse(MailThread.plan(for: [a, c], ownAddresses: me).isThread)
+        XCTAssertEqual(MailThread.plan(for: [a, b], ownAddresses: me).attachmentSources, [0])
+        XCTAssertFalse(MailThread.plan(for: [a], ownAddresses: me).isThread)
+    }
+
     func testDomainsWithoutFromRoute() {
         var config = Config()
         config.routes = [
