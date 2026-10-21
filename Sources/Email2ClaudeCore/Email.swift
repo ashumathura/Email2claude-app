@@ -18,11 +18,14 @@ public struct Email: Equatable {
     public var accountAddresses: [String]
     /// How many messages were selected in Mail. Only the first is read, so more than one is worth a warning.
     public var selectionCount: Int
+    /// More than 1 when the selection is a conversation: this is its newest message, and the
+    /// attachments come from all of them.
+    public var threadSize: Int
 
     public init(
         sender: String, subject: String, date: String,
         to: [String], cc: [String], body: String, attachmentPaths: [String], messageID: String = "",
-        attachmentFolder: URL? = nil, accountAddresses: [String] = [], selectionCount: Int = 1
+        attachmentFolder: URL? = nil, accountAddresses: [String] = [], selectionCount: Int = 1, threadSize: Int = 1
     ) {
         self.sender = sender
         self.subject = subject
@@ -35,12 +38,16 @@ public struct Email: Equatable {
         self.attachmentFolder = attachmentFolder
         self.accountAddresses = accountAddresses
         self.selectionCount = selectionCount
+        self.threadSize = threadSize
     }
 
     /// The text pasted into Claude.
     public func prompt(instruction: String) -> String {
         var lines: [String] = []
         if !instruction.isEmpty { lines += [instruction, ""] }
+        if threadSize > 1 {
+            lines += ["(The newest of \(threadSize) emails in this thread. Attachments from all of them are included.)", ""]
+        }
         lines.append("From: \(sender)")
         lines.append("To: \(to.joined(separator: ", "))")
         if !cc.isEmpty { lines.append("Cc: \(cc.joined(separator: ", "))") }
